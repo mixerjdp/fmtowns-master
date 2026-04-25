@@ -1,0 +1,40 @@
+# Build output
+/build/
+/dist/
+/out/
+/bin/
+/obj/
+/*.exe
+/*.dll
+/*.pdb
+/*.ilk
+/*.lib
+/*.exp
+/*.sym
+/*.o
+/*.obj
+/*.a
+/*.so
+/*.dylib
+/*.log
+/*.tmp
+/*.cache
+
+# Emulator/runtime data
+/cfg/
+/nvram/
+/roms/
+/samples/
+/*.ini
+
+# Common IDE cruft
+/.vs/
+/.idea/
+/*.user
+/*.suo
+/*.vcxproj.user
+/*.vcxproj.filters
+/*.sdf
+/*.ipch
+/*.tlog
+/*.lastbuildstate
