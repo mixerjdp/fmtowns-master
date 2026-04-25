@@ -16,6 +16,6 @@ The placeholder frame contains a subtle moving scan marker so a smoke test can
 confirm that `retro_run()` advances without blocking. This marker is temporary;
 Fase 3 replaces it with the raw framebuffer coming from `screen_device`.
 
-The intended MAME insertion point is `phase2_runtime::run_frame()`, where the
+The intended MAME insertion point is `phase3_runtime::run_frame()`, where the
 current placeholder slice will become a scheduler/timeslice call against an
 already-started `running_machine`.

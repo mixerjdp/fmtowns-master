@@ -17,7 +17,7 @@ if not exist "%MSYS2_ROOT%\msys2_shell.cmd" (
 if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
 
 echo Building %CORE_NAME%.dll with MSYS2 MinGW64...
-call "%MSYS2_ROOT%\msys2_shell.cmd" -defterm -no-start -mingw64 -c "mkdir -p /c/sw/fmtowns-master/build/libretro64 && cd /c/sw/fmtowns-master/build/libretro64 && rm -f fmtowns_libretro.o fmtowns_libretro.dll && g++ -O2 -std=gnu++17 -Wall -Wextra -I/c/sw/fmtowns-master/libretro -c /c/sw/fmtowns-master/libretro/fmtowns_libretro.cpp -o fmtowns_libretro.o && g++ fmtowns_libretro.o -shared -o fmtowns_libretro.dll"
+call "%MSYS2_ROOT%\msys2_shell.cmd" -defterm -no-start -mingw64 -c "mkdir -p /c/sw/fmtowns-master/build/libretro64 && cd /c/sw/fmtowns-master/build/libretro64 && rm -f fmtowns_libretro.o osd_libretro.o fmtowns_libretro.dll && g++ -O2 -std=gnu++17 -Wall -Wextra -I/c/sw/fmtowns-master/libretro -c /c/sw/fmtowns-master/libretro/fmtowns_libretro.cpp -o fmtowns_libretro.o && g++ -O2 -std=gnu++17 -Wall -Wextra -I/c/sw/fmtowns-master/libretro -c /c/sw/fmtowns-master/libretro/osd_libretro.cpp -o osd_libretro.o && g++ fmtowns_libretro.o osd_libretro.o -shared -o fmtowns_libretro.dll"
 if errorlevel 1 (
 	echo Build failed.
 	exit /b 1

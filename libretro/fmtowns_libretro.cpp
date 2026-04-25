@@ -1,9 +1,8 @@
 #include "libretro.h"
+#include "osd_libretro.h"
 
 #include <array>
-#include <cstdarg>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <string>
 #include <utility>
@@ -21,25 +20,18 @@ constexpr unsigned k_width = 640;
 constexpr unsigned k_height = 480;
 constexpr double k_fps = 60.0;
 constexpr double k_sample_rate = 44100.0;
-constexpr unsigned k_audio_channels = 2;
-
-retro_environment_t g_environment = nullptr;
-retro_video_refresh_t g_video = nullptr;
-retro_audio_sample_t g_audio = nullptr;
-retro_audio_sample_batch_t g_audio_batch = nullptr;
-retro_input_poll_t g_input_poll = nullptr;
-retro_input_state_t g_input_state = nullptr;
-retro_log_printf_t g_log = nullptr;
 
 std::string g_system_directory;
 std::string g_bios_directory;
 std::string g_model = "fmtownsux";
 std::string g_content_path;
 std::array<uint32_t, k_width * k_height> g_framebuffer = {};
-std::array<int16_t, k_audio_channels * 1024> g_audio_frame = {};
 
 const retro_variable k_variables[] = {
 	{ "fmtowns_model", "FM Towns model; fmtownsux|fmtmarty|fmtownssj|fmtowns|fmtownsv03|fmtownshr|fmtownsmx|fmtownsftv|fmtmarty2|carmarty" },
+	{ "fmtowns_pad1", "Port 1 device; gamepad|none" },
+	{ "fmtowns_pad2", "Port 2 device; none|gamepad" },
+	{ "fmtowns_mouse", "Mouse; enabled|disabled" },
 	{ nullptr, nullptr }
 };
 
@@ -57,8 +49,6 @@ const bios_file k_fmtownsux_bios[] = {
 	{ "mytownsux.rom", 0x20 },
 };
 
-void log(enum retro_log_level level, const char *fmt, ...);
-
 enum class runtime_state
 {
 	stopped,
@@ -67,7 +57,7 @@ enum class runtime_state
 	exiting
 };
 
-class phase2_runtime
+class phase3_runtime
 {
 public:
 	bool load(std::string model, std::string content, std::string bios_directory, bool bios_ready)
@@ -80,11 +70,10 @@ public:
 		m_bios_ready = bios_ready;
 		m_state = runtime_state::loaded;
 		m_frame = 0;
-		m_audio_remainder = 0.0;
 		m_reset_pending = true;
 
-		log(RETRO_LOG_INFO,
-				"Phase 2 runtime loaded: model=%s, content=%s, bios=%s, bios_ready=%s.\n",
+		fmtowns::libretro_osd::log(RETRO_LOG_INFO,
+				"Phase 3 runtime loaded: model=%s, content=%s, bios=%s, bios_ready=%s.\n",
 				m_model.c_str(),
 				m_content.empty() ? "<none>" : m_content.c_str(),
 				m_bios_directory.empty() ? "<unset>" : m_bios_directory.c_str(),
@@ -112,12 +101,11 @@ public:
 		{
 			m_reset_pending = false;
 			m_frame = 0;
-			m_audio_remainder = 0.0;
 			clear_framebuffer();
-			log(RETRO_LOG_INFO, "Phase 2 runtime reset applied.\n");
+			fmtowns::libretro_osd::log(RETRO_LOG_INFO, "Phase 3 runtime reset applied.\n");
 		}
 
-		// This is the non-blocking seam where Fase 3 will call the MAME
+		// This is the non-blocking seam where the MAME OSD bridge will call the
 		// scheduler one frame/slice at a time after running_machine exists.
 		render_placeholder_frame();
 		push_audio_frame();
@@ -129,11 +117,10 @@ public:
 		if (m_state == runtime_state::stopped)
 			return;
 
-		log(RETRO_LOG_INFO, "Phase 2 runtime unloaded after %llu frames.\n",
+		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "Phase 3 runtime unloaded after %llu frames.\n",
 				static_cast<unsigned long long>(m_frame));
 		m_state = runtime_state::stopped;
 		m_frame = 0;
-		m_audio_remainder = 0.0;
 		m_reset_pending = false;
 	}
 
@@ -158,27 +145,12 @@ private:
 		for (unsigned y = 0; y < k_height; ++y)
 			g_framebuffer[(y * k_width) + x] = 0x00181818;
 
-		if (g_video)
-			g_video(g_framebuffer.data(), k_width, k_height, k_width * sizeof(uint32_t));
+		fmtowns::libretro_osd::present_xrgb8888(g_framebuffer.data(), k_width, k_height, k_width * sizeof(uint32_t));
 	}
 
 	void push_audio_frame()
 	{
-		const double exact_frames = k_sample_rate / k_fps + m_audio_remainder;
-		const size_t frames = static_cast<size_t>(exact_frames);
-		m_audio_remainder = exact_frames - static_cast<double>(frames);
-
-		const size_t samples = frames * k_audio_channels;
-		for (size_t i = 0; i < samples && i < g_audio_frame.size(); ++i)
-			g_audio_frame[i] = 0;
-
-		if (g_audio_batch)
-			g_audio_batch(g_audio_frame.data(), frames);
-		else if (g_audio)
-		{
-			for (size_t i = 0; i < frames; ++i)
-				g_audio(0, 0);
-		}
+		fmtowns::libretro_osd::push_silence(k_sample_rate, k_fps);
 	}
 
 	std::string m_model;
@@ -186,45 +158,11 @@ private:
 	std::string m_bios_directory;
 	runtime_state m_state = runtime_state::stopped;
 	uint64_t m_frame = 0;
-	double m_audio_remainder = 0.0;
 	bool m_bios_ready = false;
 	bool m_reset_pending = false;
 };
 
-phase2_runtime g_runtime;
-
-void log(enum retro_log_level level, const char *fmt, ...)
-{
-	char buffer[1024];
-
-	va_list args;
-	va_start(args, fmt);
-	std::vsnprintf(buffer, sizeof(buffer), fmt, args);
-	va_end(args);
-
-	if (g_log)
-		g_log(level, "%s", buffer);
-	else
-		std::fputs(buffer, stderr);
-}
-
-void set_pixel_format()
-{
-	if (!g_environment)
-		return;
-
-	retro_pixel_format fmt = RETRO_PIXEL_FORMAT_XRGB8888;
-	g_environment(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt);
-}
-
-void set_support_no_game()
-{
-	if (!g_environment)
-		return;
-
-	bool support_no_game = true;
-	g_environment(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &support_no_game);
-}
+phase3_runtime g_runtime;
 
 bool file_exists(const std::string &path)
 {
@@ -250,12 +188,7 @@ void refresh_environment_paths()
 	g_system_directory.clear();
 	g_bios_directory.clear();
 
-	if (g_environment)
-	{
-		const char *system_dir = nullptr;
-		if (g_environment(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir)
-			g_system_directory = system_dir;
-	}
+	g_system_directory = fmtowns::libretro_osd::system_directory();
 
 	if (!g_system_directory.empty())
 	{
@@ -269,25 +202,24 @@ void refresh_environment_paths()
 
 void set_core_options()
 {
-	if (g_environment)
-		g_environment(RETRO_ENVIRONMENT_SET_VARIABLES, const_cast<retro_variable *>(k_variables));
+	fmtowns::libretro_osd::configure_environment(k_variables);
 }
 
 void refresh_core_options()
 {
-	if (!g_environment)
-		return;
-
-	retro_variable variable = { "fmtowns_model", nullptr };
-	if (g_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) && variable.value && variable.value[0])
-		g_model = variable.value;
+	g_model = fmtowns::libretro_osd::variable_value("fmtowns_model", "fmtownsux");
+	const std::string pad1 = fmtowns::libretro_osd::variable_value("fmtowns_pad1", "gamepad");
+	const std::string pad2 = fmtowns::libretro_osd::variable_value("fmtowns_pad2", "none");
+	const std::string mouse = fmtowns::libretro_osd::variable_value("fmtowns_mouse", "enabled");
+	fmtowns::libretro_osd::log(RETRO_LOG_INFO, "Input profile: pad1=%s, pad2=%s, mouse=%s.\n",
+			pad1.c_str(), pad2.c_str(), mouse.c_str());
 }
 
 bool validate_default_bios()
 {
 	if (g_bios_directory.empty())
 	{
-		log(RETRO_LOG_WARN, "No RetroArch system directory reported; FM Towns BIOS lookup is not ready.\n");
+		fmtowns::libretro_osd::log(RETRO_LOG_WARN, "No RetroArch system directory reported; FM Towns BIOS lookup is not ready.\n");
 		return false;
 	}
 
@@ -298,12 +230,12 @@ bool validate_default_bios()
 		if (!file_exists(path))
 		{
 			ok = false;
-			log(RETRO_LOG_WARN, "Missing FM Towns BIOS file for %s: %s\n", g_model.c_str(), path.c_str());
+			fmtowns::libretro_osd::log(RETRO_LOG_WARN, "Missing FM Towns BIOS file for %s: %s\n", g_model.c_str(), path.c_str());
 		}
 	}
 
 	if (ok)
-		log(RETRO_LOG_INFO, "FM Towns BIOS directory ready: %s\n", g_bios_directory.c_str());
+		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "FM Towns BIOS directory ready: %s\n", g_bios_directory.c_str());
 
 	return ok;
 }
@@ -312,44 +244,34 @@ bool validate_default_bios()
 
 RETRO_API_EXPORT void retro_set_environment(retro_environment_t cb)
 {
-	g_environment = cb;
-
-	if (g_environment)
-	{
-		retro_log_callback logging = {};
-		if (g_environment(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &logging))
-			g_log = logging.log;
-	}
-
-	set_pixel_format();
-	set_support_no_game();
+	fmtowns::libretro_osd::set_environment(cb);
 	set_core_options();
 	refresh_environment_paths();
 }
 
 RETRO_API_EXPORT void retro_set_video_refresh(retro_video_refresh_t cb)
 {
-	g_video = cb;
+	fmtowns::libretro_osd::set_video_refresh(cb);
 }
 
 RETRO_API_EXPORT void retro_set_audio_sample(retro_audio_sample_t cb)
 {
-	g_audio = cb;
+	fmtowns::libretro_osd::set_audio_sample(cb);
 }
 
 RETRO_API_EXPORT void retro_set_audio_sample_batch(retro_audio_sample_batch_t cb)
 {
-	g_audio_batch = cb;
+	fmtowns::libretro_osd::set_audio_sample_batch(cb);
 }
 
 RETRO_API_EXPORT void retro_set_input_poll(retro_input_poll_t cb)
 {
-	g_input_poll = cb;
+	fmtowns::libretro_osd::set_input_poll(cb);
 }
 
 RETRO_API_EXPORT void retro_set_input_state(retro_input_state_t cb)
 {
-	g_input_state = cb;
+	fmtowns::libretro_osd::set_input_state(cb);
 }
 
 RETRO_API_EXPORT void retro_set_controller_port_device(unsigned, unsigned)
@@ -368,7 +290,7 @@ RETRO_API_EXPORT void retro_get_system_info(retro_system_info *info)
 
 	std::memset(info, 0, sizeof(*info));
 	info->library_name = "FM Towns (MAME)";
-	info->library_version = "0.0-phase2";
+	info->library_version = "0.0-phase3";
 	info->valid_extensions = "chd|cue|toc|nrg|gdi|iso|cdr|mfi|dfi|mfm|td0|imd|86f|d77|d88|1dd|cqm|cqi|dsk|bin|hd|hdv|2mg|hdi|m3u";
 	info->need_fullpath = true;
 	info->block_extract = true;
@@ -392,10 +314,8 @@ RETRO_API_EXPORT void retro_get_system_av_info(retro_system_av_info *info)
 RETRO_API_EXPORT void retro_init(void)
 {
 	refresh_environment_paths();
-	set_pixel_format();
-	set_support_no_game();
 	set_core_options();
-	log(RETRO_LOG_INFO, "fmtowns_libretro Phase 2 initialized; non-blocking runtime shell is active.\n");
+	fmtowns::libretro_osd::log(RETRO_LOG_INFO, "fmtowns_libretro Phase 3 initialized; libretro OSD adapters are active.\n");
 }
 
 RETRO_API_EXPORT void retro_deinit(void)
@@ -414,7 +334,7 @@ RETRO_API_EXPORT bool retro_load_game(const retro_game_info *game)
 	refresh_core_options();
 	g_content_path = game && game->path ? game->path : "";
 	const bool bios_ready = validate_default_bios();
-	log(RETRO_LOG_INFO, "fmtowns_libretro Phase 2 bootstrap placeholder: model=%s, content=%s, bios=%s.\n",
+	fmtowns::libretro_osd::log(RETRO_LOG_INFO, "fmtowns_libretro Phase 3 bootstrap placeholder: model=%s, content=%s, bios=%s.\n",
 			g_model.c_str(),
 			g_content_path.empty() ? "<none>" : g_content_path.c_str(),
 			g_bios_directory.empty() ? "<unset>" : g_bios_directory.c_str());
@@ -433,18 +353,14 @@ RETRO_API_EXPORT unsigned retro_get_region(void)
 
 RETRO_API_EXPORT void retro_run(void)
 {
-	if (g_input_poll)
-		g_input_poll();
+	fmtowns::libretro_osd::poll_input();
 
 	if (g_runtime.loaded())
 		g_runtime.run_frame();
 	else
 	{
 		g_framebuffer.fill(0);
-		if (g_audio_batch)
-			g_audio_batch(g_audio_frame.data(), 0);
-		if (g_video)
-			g_video(g_framebuffer.data(), k_width, k_height, k_width * sizeof(uint32_t));
+		fmtowns::libretro_osd::present_xrgb8888(g_framebuffer.data(), k_width, k_height, k_width * sizeof(uint32_t));
 	}
 }
 

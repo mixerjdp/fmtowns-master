@@ -22,7 +22,7 @@ FPIC :=
 endif
 
 TARGET := $(TARGET_NAME)_libretro.$(TARGET_EXT)
-SOURCES := fmtowns_libretro.cpp
+SOURCES := fmtowns_libretro.cpp osd_libretro.cpp
 OBJECTS := $(SOURCES:.cpp=.o)
 
 CXXFLAGS ?= -O2 -std=gnu++17 -Wall -Wextra
