@@ -18,6 +18,18 @@ Build from this directory with a MinGW-style toolchain:
 make -f Makefile.libretro TARGET_OS=windows
 ```
 
+Or from the repository root on this Windows setup:
+
+```bat
+build64.bat
+```
+
+This writes build artifacts to:
+
+```text
+build\libretro64
+```
+
 Expected output:
 
 ```text

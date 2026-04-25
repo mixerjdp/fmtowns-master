@@ -12,8 +12,11 @@ extern "C" {
 #endif
 
 #define RETRO_API_VERSION 1
+#define RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY 9
 #define RETRO_ENVIRONMENT_SET_PIXEL_FORMAT 10
 #define RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME 18
+#define RETRO_ENVIRONMENT_SET_VARIABLES 16
+#define RETRO_ENVIRONMENT_GET_VARIABLE 15
 #define RETRO_ENVIRONMENT_GET_LOG_INTERFACE 27
 
 #define RETRO_DEVICE_JOYPAD 1
@@ -48,6 +51,12 @@ typedef void (*retro_log_printf_t)(enum retro_log_level level, const char *fmt, 
 struct retro_log_callback
 {
 	retro_log_printf_t log;
+};
+
+struct retro_variable
+{
+	const char *key;
+	const char *value;
 };
 
 struct retro_game_geometry

@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <vector>
 
 #if defined(_WIN32)
 #define RETRO_API_EXPORT extern "C" __declspec(dllexport)
@@ -28,8 +30,31 @@ retro_input_state_t g_input_state = nullptr;
 retro_log_printf_t g_log = nullptr;
 
 bool g_loaded = false;
+std::string g_system_directory;
+std::string g_bios_directory;
+std::string g_model = "fmtownsux";
+std::string g_content_path;
 std::array<uint32_t, k_width * k_height> g_framebuffer = {};
 std::array<int16_t, 2 * 735> g_silence = {};
+
+const retro_variable k_variables[] = {
+	{ "fmtowns_model", "FM Towns model; fmtownsux|fmtmarty|fmtownssj|fmtowns|fmtownsv03|fmtownshr|fmtownsmx|fmtownsftv|fmtmarty2|carmarty" },
+	{ nullptr, nullptr }
+};
+
+struct bios_file
+{
+	const char *name;
+	size_t expected_size;
+};
+
+const bios_file k_fmtownsux_bios[] = {
+	{ "fmt_dos_a.rom", 0x80000 },
+	{ "fmt_dic.rom", 0x80000 },
+	{ "fmt_fnt.rom", 0x40000 },
+	{ "fmt_sys_a.rom", 0x40000 },
+	{ "mytownsux.rom", 0x20 },
+};
 
 void log(enum retro_log_level level, const char *fmt, ...)
 {
@@ -64,6 +89,88 @@ void set_support_no_game()
 	g_environment(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &support_no_game);
 }
 
+bool file_exists(const std::string &path)
+{
+	FILE *file = std::fopen(path.c_str(), "rb");
+	if (!file)
+		return false;
+	std::fclose(file);
+	return true;
+}
+
+std::string join_path(const std::string &base, const char *leaf)
+{
+	if (base.empty())
+		return leaf ? leaf : "";
+
+	const char last = base[base.size() - 1];
+	const bool has_separator = last == '/' || last == '\\';
+	return base + (has_separator ? "" : "\\") + (leaf ? leaf : "");
+}
+
+void refresh_environment_paths()
+{
+	g_system_directory.clear();
+	g_bios_directory.clear();
+
+	if (g_environment)
+	{
+		const char *system_dir = nullptr;
+		if (g_environment(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir)
+			g_system_directory = system_dir;
+	}
+
+	if (!g_system_directory.empty())
+	{
+		const std::string fmtowns_dir = join_path(g_system_directory, "fmtowns");
+		g_bios_directory = file_exists(join_path(fmtowns_dir, "fmt_dos.rom")) ||
+				file_exists(join_path(fmtowns_dir, "fmt_dos_a.rom"))
+			? fmtowns_dir
+			: g_system_directory;
+	}
+}
+
+void set_core_options()
+{
+	if (g_environment)
+		g_environment(RETRO_ENVIRONMENT_SET_VARIABLES, const_cast<retro_variable *>(k_variables));
+}
+
+void refresh_core_options()
+{
+	if (!g_environment)
+		return;
+
+	retro_variable variable = { "fmtowns_model", nullptr };
+	if (g_environment(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) && variable.value && variable.value[0])
+		g_model = variable.value;
+}
+
+bool validate_default_bios()
+{
+	if (g_bios_directory.empty())
+	{
+		log(RETRO_LOG_WARN, "No RetroArch system directory reported; FM Towns BIOS lookup is not ready.\n");
+		return false;
+	}
+
+	bool ok = true;
+	for (const bios_file &bios : k_fmtownsux_bios)
+	{
+		const std::string path = join_path(g_bios_directory, bios.name);
+		if (!file_exists(path))
+		{
+			ok = false;
+			log(RETRO_LOG_WARN, "Missing FM Towns BIOS file for %s: %s\n", g_model.c_str(), path.c_str());
+		}
+	}
+
+	if (ok)
+		log(RETRO_LOG_INFO, "FM Towns BIOS directory ready: %s\n", g_bios_directory.c_str());
+
+	return ok;
+}
+
 } // namespace
 
 RETRO_API_EXPORT void retro_set_environment(retro_environment_t cb)
@@ -79,6 +186,8 @@ RETRO_API_EXPORT void retro_set_environment(retro_environment_t cb)
 
 	set_pixel_format();
 	set_support_no_game();
+	set_core_options();
+	refresh_environment_paths();
 }
 
 RETRO_API_EXPORT void retro_set_video_refresh(retro_video_refresh_t cb)
@@ -145,9 +254,11 @@ RETRO_API_EXPORT void retro_get_system_av_info(retro_system_av_info *info)
 
 RETRO_API_EXPORT void retro_init(void)
 {
+	refresh_environment_paths();
 	set_pixel_format();
 	set_support_no_game();
-	log(RETRO_LOG_INFO, "fmtowns_libretro Phase 0 initialized; MAME bootstrap is not connected yet.\n");
+	set_core_options();
+	log(RETRO_LOG_INFO, "fmtowns_libretro Phase 1 initialized; direct MAME bootstrap wiring is in progress.\n");
 }
 
 RETRO_API_EXPORT void retro_deinit(void)
@@ -161,10 +272,15 @@ RETRO_API_EXPORT void retro_reset(void)
 
 RETRO_API_EXPORT bool retro_load_game(const retro_game_info *game)
 {
+	refresh_environment_paths();
+	refresh_core_options();
+	g_content_path = game && game->path ? game->path : "";
 	g_loaded = true;
-	log(RETRO_LOG_INFO, "fmtowns_libretro Phase 0 loaded placeholder session%s%s.\n",
-			game && game->path ? ": " : "",
-			game && game->path ? game->path : "");
+	validate_default_bios();
+	log(RETRO_LOG_INFO, "fmtowns_libretro Phase 1 bootstrap placeholder: model=%s, content=%s, bios=%s.\n",
+			g_model.c_str(),
+			g_content_path.empty() ? "<none>" : g_content_path.c_str(),
+			g_bios_directory.empty() ? "<unset>" : g_bios_directory.c_str());
 	return true;
 }
 
