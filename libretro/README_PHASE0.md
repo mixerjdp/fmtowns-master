@@ -36,6 +36,7 @@ Expected output:
 fmtowns_libretro.dll
 ```
 
-That DLL is a Phase 0 placeholder. Phase 1 replaces the placeholder session in
-`retro_load_game()`/`retro_run()` with a direct MAME bootstrap for the selected
-FM Towns driver, keeping this libretro ABI surface as the stable outer shell.
+That DLL is no longer only a Phase 0 placeholder. Phase 1 added RetroArch
+system-directory and loose-BIOS discovery, and Phase 2 adds the non-blocking
+runtime shell used by `retro_run()`. The direct MAME bootstrap still lands in a
+later phase, keeping this libretro ABI surface as the stable outer shell.
