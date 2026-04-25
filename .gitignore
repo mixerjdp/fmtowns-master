@@ -19,6 +19,20 @@
 /*.log
 /*.tmp
 /*.cache
+/libretro/*.dll
+/libretro/*.pdb
+/libretro/*.ilk
+/libretro/*.lib
+/libretro/*.exp
+/libretro/*.sym
+/libretro/*.o
+/libretro/*.obj
+/libretro/*.a
+/libretro/*.so
+/libretro/*.dylib
+/libretro/*.log
+/libretro/*.tmp
+/libretro/*.cache
 
 # Emulator/runtime data
 /cfg/
