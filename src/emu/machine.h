@@ -164,6 +164,9 @@ public:
 
 	// immediate operations
 	int run(bool quiet);
+	int libretro_start(bool quiet);
+	void libretro_run_slice();
+	void libretro_stop();
 	void pause();
 	void resume();
 	void toggle_pause();

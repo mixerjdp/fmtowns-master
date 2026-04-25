@@ -37,6 +37,7 @@
 # Emulator/runtime data
 /cfg/
 /nvram/
+/snap/
 /roms/
 /samples/
 /*.ini

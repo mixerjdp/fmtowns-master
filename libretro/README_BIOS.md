@@ -27,6 +27,17 @@ The intended RetroArch install folder is:
 D:\Emulation\Emulators\RetroArch\system\fmtowns
 ```
 
-MAME-compatible ZIP sets are not required for this libretro route. Phase 1 is
-starting with loose `.rom` lookup so the later MAME bootstrap can receive a
-normal media path rooted in RetroArch's `system` directory.
+For the in-process MAME bootstrap, keep the ROMs loose but mirror MAME's set
+folders under that same directory:
+
+```text
+system/fmtowns/fmtownsux/fmt_dos_a.rom
+system/fmtowns/fmtownsux/fmt_sys_a.rom
+system/fmtowns/fmtownsux/mytownsux.rom
+system/fmtowns/fmtowns/fmt_dic.rom
+system/fmtowns/fmtowns/fmt_fnt.rom
+```
+
+MAME-compatible ZIP sets are not required for this libretro route. The core
+uses `system/fmtowns` as `rompath`, so loose files need the set subfolders even
+though they are not compressed.

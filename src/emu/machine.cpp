@@ -415,6 +415,104 @@ int running_machine::run(bool quiet)
 	return error;
 }
 
+int running_machine::libretro_start(bool quiet)
+{
+	int error = EMU_ERR_NONE;
+
+	try
+	{
+		m_manager.http()->clear();
+		m_current_phase = machine_phase::INIT;
+
+		start();
+		m_save.allow_registration(false);
+
+		manager().before_load_settings(*this);
+		m_configuration->load_settings();
+		nvram_load();
+		set_rtc_datetime(system_time(m_base_time));
+
+		sound().ui_mute(false);
+		if (!quiet)
+			sound().start_recording();
+
+		m_hard_reset_pending = false;
+		manager().ui_initialize(*this);
+		soft_reset();
+
+		if (m_saveload_schedule != saveload_schedule::NONE)
+			handle_saveload();
+
+		export_http_api();
+	}
+	catch (emu_fatalerror const &fatal)
+	{
+		osd_printf_error("Fatal error: %s\n", fatal.what());
+		error = fatal.exitcode() ? fatal.exitcode() : EMU_ERR_FATALERROR;
+	}
+	catch (emu_exception const &)
+	{
+		osd_printf_error("Caught unhandled emulator exception\n");
+		error = EMU_ERR_FATALERROR;
+	}
+	catch (binding_type_exception const &btex)
+	{
+		osd_printf_error("Error performing a late bind of function expecting type %s to instance of type %s\n", btex.target_type().name(), btex.actual_type().name());
+		error = EMU_ERR_FATALERROR;
+	}
+	catch (tag_add_exception const &aex)
+	{
+		osd_printf_error("Tag '%s' already exists in tagged map\n", aex.tag());
+		error = EMU_ERR_FATALERROR;
+	}
+	catch (std::exception const &ex)
+	{
+		osd_printf_error("Caught unhandled %s exception: %s\n", typeid(ex).name(), ex.what());
+		error = EMU_ERR_FATALERROR;
+	}
+	catch (...)
+	{
+		osd_printf_error("Caught unhandled exception\n");
+		error = EMU_ERR_FATALERROR;
+	}
+
+	return error;
+}
+
+void running_machine::libretro_run_slice()
+{
+	if ((m_current_phase != machine_phase::RUNNING) || m_exit_pending || m_hard_reset_pending)
+		return;
+
+	if (!m_paused)
+		m_scheduler.timeslice();
+	else
+	{
+		m_video->frame_update();
+		sound().mapping_update();
+	}
+
+	if (m_saveload_schedule != saveload_schedule::NONE)
+		handle_saveload();
+}
+
+void running_machine::libretro_stop()
+{
+	if (m_current_phase == machine_phase::EXIT)
+		return;
+
+	m_manager.http()->clear();
+	m_current_phase = machine_phase::EXIT;
+
+	sound().ui_mute(true);
+	if (options().nvram_save())
+		nvram_save();
+	m_configuration->save_settings();
+	call_notifiers(MACHINE_NOTIFY_EXIT);
+	util::archive_file::cache_clear();
+	m_logfile.reset();
+}
+
 //-------------------------------------------------
 //  schedule_exit - schedule a clean exit
 //-------------------------------------------------

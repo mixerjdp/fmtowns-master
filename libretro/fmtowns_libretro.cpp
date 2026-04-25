@@ -1,9 +1,12 @@
 #include "libretro.h"
+#include "mame_bridge.h"
 #include "osd_libretro.h"
 
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -57,6 +60,8 @@ enum class runtime_state
 	exiting
 };
 
+std::string join_path(const std::string &base, const char *leaf);
+
 class phase3_runtime
 {
 public:
@@ -71,6 +76,13 @@ public:
 		m_state = runtime_state::loaded;
 		m_frame = 0;
 		m_reset_pending = true;
+		m_mame = std::make_unique<fmtowns::mame_bridge::session>();
+
+		std::error_code fs_error;
+		const std::string cfg_directory = join_path(m_bios_directory, "cfg");
+		const std::string nvram_directory = join_path(m_bios_directory, "nvram");
+		std::filesystem::create_directories(cfg_directory, fs_error);
+		std::filesystem::create_directories(nvram_directory, fs_error);
 
 		fmtowns::libretro_osd::log(RETRO_LOG_INFO,
 				"Phase 3 runtime loaded: model=%s, content=%s, bios=%s, bios_ready=%s.\n",
@@ -78,6 +90,24 @@ public:
 				m_content.empty() ? "<none>" : m_content.c_str(),
 				m_bios_directory.empty() ? "<unset>" : m_bios_directory.c_str(),
 				m_bios_ready ? "yes" : "no");
+
+		fmtowns::mame_bridge::boot_config boot;
+		boot.model = m_model;
+		boot.bios_directory = m_bios_directory;
+		boot.content_path = m_content;
+		boot.cfg_directory = cfg_directory;
+		boot.nvram_directory = nvram_directory;
+
+		std::string error;
+		if (!m_mame->start(boot, error))
+		{
+			fmtowns::libretro_osd::log(RETRO_LOG_ERROR, "MAME libretro bootstrap failed: %s\n", error.c_str());
+			m_mame.reset();
+			m_state = runtime_state::stopped;
+			return false;
+		}
+
+		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "MAME libretro bootstrap is running in-process.\n");
 		return true;
 	}
 
@@ -103,11 +133,18 @@ public:
 			m_frame = 0;
 			clear_framebuffer();
 			fmtowns::libretro_osd::log(RETRO_LOG_INFO, "Phase 3 runtime reset applied.\n");
+			if (m_mame)
+				m_mame->reset();
 		}
 
-		// This is the non-blocking seam where the MAME OSD bridge will call the
-		// scheduler one frame/slice at a time after running_machine exists.
-		render_placeholder_frame();
+		if (m_mame && m_mame->running())
+		{
+			m_mame->run_slice();
+			render_mame_frame();
+		}
+		else
+			render_placeholder_frame();
+
 		push_audio_frame();
 		++m_frame;
 	}
@@ -119,6 +156,9 @@ public:
 
 		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "Phase 3 runtime unloaded after %llu frames.\n",
 				static_cast<unsigned long long>(m_frame));
+		if (m_mame)
+			m_mame->stop();
+		m_mame.reset();
 		m_state = runtime_state::stopped;
 		m_frame = 0;
 		m_reset_pending = false;
@@ -133,6 +173,16 @@ private:
 	void clear_framebuffer()
 	{
 		g_framebuffer.fill(0);
+	}
+
+	void render_mame_frame()
+	{
+		unsigned width = 0;
+		unsigned height = 0;
+		if (m_mame->copy_video_frame(g_framebuffer.data(), k_width, k_height, width, height))
+			fmtowns::libretro_osd::present_xrgb8888(g_framebuffer.data(), width, height, k_width * sizeof(uint32_t));
+		else
+			render_placeholder_frame();
 	}
 
 	void render_placeholder_frame()
@@ -156,6 +206,7 @@ private:
 	std::string m_model;
 	std::string m_content;
 	std::string m_bios_directory;
+	std::unique_ptr<fmtowns::mame_bridge::session> m_mame;
 	runtime_state m_state = runtime_state::stopped;
 	uint64_t m_frame = 0;
 	bool m_bios_ready = false;
@@ -290,7 +341,7 @@ RETRO_API_EXPORT void retro_get_system_info(retro_system_info *info)
 
 	std::memset(info, 0, sizeof(*info));
 	info->library_name = "FM Towns (MAME)";
-	info->library_version = "0.0-phase3";
+	info->library_version = "0.0-mame-bridge";
 	info->valid_extensions = "chd|cue|toc|nrg|gdi|iso|cdr|mfi|dfi|mfm|td0|imd|86f|d77|d88|1dd|cqm|cqi|dsk|bin|hd|hdv|2mg|hdi|m3u";
 	info->need_fullpath = true;
 	info->block_extract = true;
@@ -334,7 +385,7 @@ RETRO_API_EXPORT bool retro_load_game(const retro_game_info *game)
 	refresh_core_options();
 	g_content_path = game && game->path ? game->path : "";
 	const bool bios_ready = validate_default_bios();
-	fmtowns::libretro_osd::log(RETRO_LOG_INFO, "fmtowns_libretro Phase 3 bootstrap placeholder: model=%s, content=%s, bios=%s.\n",
+	fmtowns::libretro_osd::log(RETRO_LOG_INFO, "fmtowns_libretro MAME bootstrap: model=%s, content=%s, bios=%s.\n",
 			g_model.c_str(),
 			g_content_path.empty() ? "<none>" : g_content_path.c_str(),
 			g_bios_directory.empty() ? "<unset>" : g_bios_directory.c_str());
