@@ -97,7 +97,7 @@ public:
 		if (!buffer || samples_this_frame <= 0)
 			return;
 
-		fmtowns::libretro_osd::push_interleaved_audio(buffer, static_cast<std::size_t>(samples_this_frame));
+		fmtowns::libretro_osd::push_mame_audio_samples(buffer, static_cast<std::size_t>(samples_this_frame));
 	}
 	std::vector<ui::menu_item> get_slider_list() override { return {}; }
 
@@ -346,6 +346,10 @@ public:
 		}
 
 		append_canary_line("session_after_libretro_start_ok\n");
+		unsigned audio_channels = 0;
+		for (speaker_device &speaker : speaker_device_enumerator(m_machine->root_device()))
+			audio_channels += speaker.inputs();
+		fmtowns::libretro_osd::set_mame_audio_channels(audio_channels);
 		for (screen_device &screen : screen_device_enumerator(m_machine->root_device()))
 			screen.set_video_attributes(VIDEO_ALWAYS_UPDATE);
 		m_running = true;

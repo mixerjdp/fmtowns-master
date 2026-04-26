@@ -26,6 +26,7 @@ double g_audio_remainder = 0.0;
 std::vector<uint32_t> g_captured_frame;
 unsigned g_captured_width = 0;
 unsigned g_captured_height = 0;
+unsigned g_mame_audio_channels = 2;
 
 } // namespace
 
@@ -190,17 +191,52 @@ void push_silence(double sample_rate, double fps)
 	}
 }
 
-void push_interleaved_audio(const int16_t *samples, std::size_t frames)
+void set_mame_audio_channels(unsigned channels)
+{
+	g_mame_audio_channels = channels ? channels : 1;
+}
+
+unsigned mame_audio_channels()
+{
+	return g_mame_audio_channels ? g_mame_audio_channels : 1;
+}
+
+void push_mame_audio_samples(const int16_t *samples, std::size_t frames)
 {
 	if (!samples || frames == 0)
 		return;
 
+	const unsigned channels = mame_audio_channels();
+	std::vector<int16_t> stereo;
+	stereo.resize(frames * 2);
+
+	if (channels == 1)
+	{
+		for (std::size_t i = 0; i < frames; ++i)
+		{
+			const int16_t sample = samples[i];
+			stereo[(i * 2) + 0] = sample;
+			stereo[(i * 2) + 1] = sample;
+		}
+	}
+	else
+	{
+		for (std::size_t i = 0; i < frames; ++i)
+		{
+			const std::size_t base = i * static_cast<std::size_t>(channels);
+			const int16_t left = samples[base + 0];
+			const int16_t right = (channels > 1) ? samples[base + 1] : left;
+			stereo[(i * 2) + 0] = left;
+			stereo[(i * 2) + 1] = right;
+		}
+	}
+
 	if (g_audio_batch)
-		g_audio_batch(samples, frames);
+		g_audio_batch(stereo.data(), frames);
 	else if (g_audio)
 	{
 		for (std::size_t i = 0; i < frames; ++i)
-			g_audio(samples[(i * 2) + 0], samples[(i * 2) + 1]);
+			g_audio(stereo[(i * 2) + 0], stereo[(i * 2) + 1]);
 	}
 }
 

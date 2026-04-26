@@ -29,7 +29,9 @@ bool copy_captured_xrgb8888(uint32_t *pixels, unsigned max_width, unsigned max_h
 
 void present_xrgb8888(const uint32_t *pixels, unsigned width, unsigned height, std::size_t pitch);
 void push_silence(double sample_rate, double fps);
-void push_interleaved_audio(const int16_t *samples, std::size_t frames);
+void set_mame_audio_channels(unsigned channels);
+unsigned mame_audio_channels();
+void push_mame_audio_samples(const int16_t *samples, std::size_t frames);
 void push_mame_audio(const float *left, const float *right, std::size_t frames);
 
 void log(enum retro_log_level level, const char *fmt, ...);
