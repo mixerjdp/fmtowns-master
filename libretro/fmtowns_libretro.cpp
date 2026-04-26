@@ -31,6 +31,7 @@ constexpr double k_sample_rate = 44100.0;
 
 std::string g_system_directory;
 std::string g_bios_directory;
+retro_environment_t environ_cb = nullptr;
 std::string g_model = "fmtownsux";
 std::string g_content_path;
 std::array<uint32_t, k_width * k_height> g_framebuffer = {};
@@ -207,9 +208,7 @@ void stop_watchdog()
 
 const retro_variable k_variables[] = {
 	{ "fmtowns_model", "FM Towns model; fmtownsux|fmtmarty|fmtownssj|fmtowns|fmtownsv03|fmtownshr|fmtownsmx|fmtownsftv|fmtmarty2|carmarty" },
-	{ "fmtowns_pad1", "Port 1 device; gamepad|none" },
-	{ "fmtowns_pad2", "Port 2 device; none|gamepad" },
-	{ "fmtowns_mouse", "Mouse; enabled|disabled" },
+	{ "fmtowns_port2", "Joystick Port 2; mouse|gamepad" },
 	{ nullptr, nullptr }
 };
 
@@ -241,51 +240,28 @@ void append_canary_line(const char *line);
 class phase3_runtime
 {
 public:
-	bool load(std::string model, std::string content, std::string bios_directory, bool bios_ready)
+	bool load(std::string model, const fmtowns::mame_bridge::boot_config &config, bool bios_ready)
 	{
 		unload();
-
-		m_model = std::move(model);
-		m_content = std::move(content);
-		m_bios_directory = std::move(bios_directory);
+		m_model = model;
+		m_content = config.content_path;
+		m_bios_directory = config.bios_directory;
 		m_bios_ready = bios_ready;
-		m_state = runtime_state::loaded;
-		m_frame = 0;
-		m_reset_pending = false;
-		m_run_canary_issued = false;
+
 		m_mame = std::make_unique<fmtowns::mame_bridge::session>();
-
+		
 		std::error_code fs_error;
-		const std::string cfg_directory = join_path(m_bios_directory, "cfg");
-		const std::string nvram_directory = join_path(m_bios_directory, "nvram");
-		std::filesystem::create_directories(cfg_directory, fs_error);
-		std::filesystem::create_directories(nvram_directory, fs_error);
-
-		fmtowns::libretro_osd::log(RETRO_LOG_INFO,
-				"Phase 3 runtime loaded: model=%s, content=%s, bios=%s, bios_ready=%s.\n",
-				m_model.c_str(),
-				m_content.empty() ? "<none>" : m_content.c_str(),
-				m_bios_directory.empty() ? "<unset>" : m_bios_directory.c_str(),
-				m_bios_ready ? "yes" : "no");
-
-		fmtowns::mame_bridge::boot_config boot;
-		boot.model = m_model;
-		boot.bios_directory = m_bios_directory;
-		boot.content_path = m_content;
-		boot.cfg_directory = cfg_directory;
-		boot.nvram_directory = nvram_directory;
+		std::filesystem::create_directories(config.cfg_directory, fs_error);
+		std::filesystem::create_directories(config.nvram_directory, fs_error);
 
 		std::string error;
-		if (!m_mame->start(boot, error))
+		if (!m_mame->start(config, error))
 		{
-			fmtowns::libretro_osd::log(RETRO_LOG_ERROR, "MAME libretro bootstrap failed: %s\n", error.c_str());
-			m_mame.reset();
-			m_state = runtime_state::stopped;
-			g_runtime_loaded.store(false);
+			fmtowns::libretro_osd::log(RETRO_LOG_ERROR, "MAME start failed: %s\n", error.c_str());
 			return false;
 		}
 
-		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "MAME libretro bootstrap is running in-process.\n");
+		m_state = runtime_state::running;
 		g_runtime_loaded.store(true);
 		return true;
 	}
@@ -511,7 +487,10 @@ private:
 
 	void push_audio_frame()
 	{
-		fmtowns::libretro_osd::push_silence(k_sample_rate, k_fps);
+		// Audio real viene de headless_osd_interface::add_audio_to_recording()
+		// que llama a fmtowns::libretro_osd::push_audio() para bufferizar.
+		// Aquí sincronizamos el envío con el frame de video.
+		fmtowns::libretro_osd::flush_audio_frame();
 	}
 
 	std::string m_model;
@@ -520,6 +499,7 @@ private:
 	std::unique_ptr<fmtowns::mame_bridge::session> m_mame;
 	runtime_state m_state = runtime_state::stopped;
 	uint64_t m_frame = 0;
+
 	bool m_bios_ready = false;
 	bool m_reset_pending = false;
 	bool m_have_real_frame = false;
@@ -572,11 +552,6 @@ void set_core_options()
 void refresh_core_options()
 {
 	g_model = fmtowns::libretro_osd::variable_value("fmtowns_model", "fmtownsux");
-	const std::string pad1 = fmtowns::libretro_osd::variable_value("fmtowns_pad1", "gamepad");
-	const std::string pad2 = fmtowns::libretro_osd::variable_value("fmtowns_pad2", "none");
-	const std::string mouse = fmtowns::libretro_osd::variable_value("fmtowns_mouse", "enabled");
-	fmtowns::libretro_osd::log(RETRO_LOG_INFO, "Input profile: pad1=%s, pad2=%s, mouse=%s.\n",
-			pad1.c_str(), pad2.c_str(), mouse.c_str());
 }
 
 bool validate_default_bios()
@@ -604,10 +579,15 @@ bool validate_default_bios()
 	return ok;
 }
 
+void on_keyboard_event(bool down, unsigned keycode, uint32_t character, uint16_t key_modifiers)
+{
+}
+
 } // namespace
 
 RETRO_API_EXPORT void retro_set_environment(retro_environment_t cb)
 {
+    environ_cb = cb;
 	fmtowns::libretro_osd::set_environment(cb);
 	set_core_options();
 	refresh_environment_paths();
@@ -709,7 +689,20 @@ RETRO_API_EXPORT bool retro_load_game(const retro_game_info *game)
 			g_model.c_str(),
 			g_content_path.empty() ? "<none>" : g_content_path.c_str(),
 			g_bios_directory.empty() ? "<unset>" : g_bios_directory.c_str());
-	return g_runtime.load(g_model, g_content_path, g_bios_directory, bios_ready);
+
+    fmtowns::mame_bridge::boot_config config;
+    config.model = g_model;
+    config.content_path = g_content_path;
+    config.bios_directory = g_bios_directory;
+    config.cfg_directory = join_path(g_bios_directory, "cfg");
+    config.nvram_directory = join_path(g_bios_directory, "nvram");
+    config.port2_type = fmtowns::libretro_osd::variable_value("fmtowns_port2", "mouse");
+
+    retro_keyboard_callback_t kbd = { on_keyboard_event };
+    fmtowns::libretro_osd::set_keyboard_callback(&kbd);
+    fmtowns::libretro_osd::reset_audio();
+
+	return g_runtime.load(g_model, config, bios_ready);
 }
 
 RETRO_API_EXPORT void retro_unload_game(void)

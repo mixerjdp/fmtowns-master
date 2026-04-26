@@ -17,6 +17,7 @@
 #include <cctype>
 #include <cstdio>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <string>
 #include <utility>
@@ -41,12 +42,17 @@ public:
 	using ui_manager::ui_manager;
 };
 
+struct audio_sink_info {
+    bool is_left = false;
+    bool is_right = false;
+};
+
 class headless_osd_interface : public osd_interface
 {
 public:
-	void init(running_machine &) override { }
+	void init(running_machine &machine) override { m_machine = &machine; }
 	void update(bool) override { }
-	void input_update(bool) override { }
+	void input_update(bool force) override;
 	void check_osd_inputs() override { }
 	void set_verbose(bool print_verbose) override { m_verbose = print_verbose; }
 
@@ -77,10 +83,32 @@ public:
 
 		return info;
 	}
-	uint32_t sound_stream_sink_open(uint32_t, std::string, uint32_t) override { return ++m_next_stream_id; }
+	uint32_t sound_stream_sink_open(uint32_t channels, std::string name, uint32_t sample_rate) override 
+    { 
+        uint32_t id = ++m_next_stream_id;
+        auto& info = m_sinks[id];
+        info.is_left = (name.find("lspeaker") != std::string::npos || name.find("left") != std::string::npos);
+        info.is_right = (name.find("rspeaker") != std::string::npos || name.find("right") != std::string::npos);
+        if (!info.is_left && !info.is_right) {
+            info.is_left = info.is_right = true; // Mono sink
+        }
+        return id;
+    }
 	uint32_t sound_stream_source_open(uint32_t, std::string, uint32_t) override { return ++m_next_stream_id; }
 	void sound_stream_close(uint32_t) override { }
-	void sound_stream_sink_update(uint32_t, const int16_t *, int) override { }
+	void add_audio_to_recording(const int16_t *buffer, int samples_this_frame) override
+	{
+		// Recording hook sounds bad according to user, using sink updates instead.
+	}
+
+	void sound_stream_sink_update(uint32_t id, const int16_t *buffer, int samples_this_frame) override
+	{
+        auto it = m_sinks.find(id);
+        if (it != m_sinks.end())
+        {
+		    fmtowns::libretro_osd::mix_audio(buffer, samples_this_frame, it->second.is_left, it->second.is_right);
+        }
+	}
 	void sound_stream_source_update(uint32_t, int16_t *buffer, int samples_this_frame) override
 	{
 		if (buffer)
@@ -88,10 +116,8 @@ public:
 	}
 	void sound_stream_set_volumes(uint32_t, const std::vector<float> &) override { }
 	void sound_begin_update() override { }
-	void sound_end_update() override { }
-
-	void customize_input_type_list(std::vector<input_type_entry> &) override { }
-	void add_audio_to_recording(const int16_t *, int) override { }
+    void sound_end_update() override { }
+    void customize_input_type_list(std::vector<input_type_entry> &) override { }
 	std::vector<ui::menu_item> get_slider_list() override { return {}; }
 
 	osd_font::ptr font_alloc() override { return std::make_unique<headless_font>(); }
@@ -111,7 +137,133 @@ private:
 	static constexpr uint32_t m_default_sink_id = 1;
 	bool m_verbose = false;
 	uint32_t m_next_stream_id = 0;
+	running_machine *m_machine = nullptr;
+    std::map<uint32_t, audio_sink_info> m_sinks;
 };
+
+struct key_map_entry {
+    const char *mame_name;
+    unsigned retrok;
+};
+
+static const key_map_entry s_key_map[] = {
+    { "A", RETROK_a }, { "B", RETROK_b }, { "C", RETROK_c }, { "D", RETROK_d }, { "E", RETROK_e },
+    { "F", RETROK_f }, { "G", RETROK_g }, { "H", RETROK_h }, { "I", RETROK_i }, { "J", RETROK_j },
+    { "K", RETROK_k }, { "L", RETROK_l }, { "M", RETROK_m }, { "N", RETROK_n }, { "O", RETROK_o },
+    { "P", RETROK_p }, { "Q", RETROK_q }, { "R", RETROK_r }, { "S", RETROK_s }, { "T", RETROK_t },
+    { "U", RETROK_u }, { "V", RETROK_v }, { "W", RETROK_w }, { "X", RETROK_x }, { "Y", RETROK_y },
+    { "Z", RETROK_z },
+    { "0", RETROK_0 }, { "1", RETROK_1 }, { "2", RETROK_2 }, { "3", RETROK_3 }, { "4", RETROK_4 },
+    { "5", RETROK_5 }, { "6", RETROK_6 }, { "7", RETROK_7 }, { "8", RETROK_8 }, { "9", RETROK_9 },
+    { "ESC", RETROK_ESCAPE }, { "RETURN", RETROK_RETURN }, { "Space", RETROK_SPACE },
+    { "Tab", RETROK_TAB }, { "Backspace", RETROK_BACKSPACE }, { "Shift", RETROK_LSHIFT },
+    { "Ctrl", RETROK_LCTRL }, { "ALT", RETROK_LALT }, { "CAP", RETROK_CAPSLOCK },
+    { "Up", RETROK_UP }, { "Down", RETROK_DOWN }, { "Left", RETROK_LEFT }, { "Right", RETROK_RIGHT },
+    { "HOME", RETROK_HOME }, { "Insert", RETROK_INSERT }, { "Delete", RETROK_DELETE },
+    { "BREAK", RETROK_PAUSE }, { "PF1", RETROK_F1 }, { "PF2", RETROK_F2 }, { "PF3", RETROK_F3 },
+    { "PF4", RETROK_F4 }, { "PF5", RETROK_F5 }, { "PF6", RETROK_F6 }, { "PF7", RETROK_F7 },
+    { "PF8", RETROK_F8 }, { "PF9", RETROK_F9 }, { "PF10", RETROK_F10 }, { "PF11", RETROK_F11 },
+    { "PF12", RETROK_F12 }, { "PF13", RETROK_F1 }, { "PF14", RETROK_F2 }, { "PF15", RETROK_F3 },
+    { "PF16", RETROK_F4 }, { "PF17", RETROK_F5 }, { "PF18", RETROK_F6 }, { "PF19", RETROK_F7 },
+    { "PF20", RETROK_F8 },
+    { "Hiragana", RETROK_LSUPER }, { "Katakana", RETROK_RSUPER },
+    { "Conversion", RETROK_LALT }, { "Non-conversion", RETROK_RALT },
+    { "Kana Kanji", RETROK_RALT },
+};
+
+static bool is_key_match(const std::string& name, const char* label)
+{
+    if (name == label) return true;
+    size_t len = strlen(label);
+    // Smart match for decorated names like "1 ! ..."
+    if (name.compare(0, len, label) == 0)
+    {
+        if (name.length() == len || name[len] == ' ') return true;
+    }
+    // Match Japanese labels with English in parentheses
+    if (name.find(std::string("(") + label + ")") != std::string::npos) return true;
+    return false;
+}
+
+void headless_osd_interface::input_update(bool force)
+{
+    if (!m_machine) return;
+
+    fmtowns::libretro_osd::poll_input();
+
+    bool shifted = fmtowns::libretro_osd::key_pressed(RETROK_RSHIFT) || fmtowns::libretro_osd::key_pressed(RETROK_LSHIFT);
+
+    for (auto &port : m_machine->ioport().ports())
+    {
+        for (auto &field : port.second->fields())
+        {
+            if (field.type() == IPT_KEYBOARD)
+            {
+                std::string name = field.name();
+                for (const auto &entry : s_key_map)
+                {
+                    if (is_key_match(name, entry.mame_name))
+                    {
+                        bool is_ext_pf = (name.find("PF13") != std::string::npos || name.find("PF14") != std::string::npos ||
+                                          name.find("PF15") != std::string::npos || name.find("PF16") != std::string::npos ||
+                                          name.find("PF17") != std::string::npos || name.find("PF18") != std::string::npos ||
+                                          name.find("PF19") != std::string::npos || name.find("PF20") != std::string::npos);
+                        
+                        bool is_std_pf = !is_ext_pf && (name.find("PF1") != std::string::npos || name.find("PF2") != std::string::npos ||
+                                                        name.find("PF3") != std::string::npos || name.find("PF4") != std::string::npos ||
+                                                        name.find("PF5") != std::string::npos || name.find("PF6") != std::string::npos ||
+                                                        name.find("PF7") != std::string::npos || name.find("PF8") != std::string::npos ||
+                                                        name.find("PF9") != std::string::npos || name.find("PF10") != std::string::npos);
+
+                        if (is_ext_pf) {
+                            field.set_value(shifted && fmtowns::libretro_osd::key_pressed(entry.retrok));
+                        } else if (is_std_pf) {
+                            field.set_value(!shifted && fmtowns::libretro_osd::key_pressed(entry.retrok));
+                        } else {
+                            field.set_value(fmtowns::libretro_osd::key_pressed(entry.retrok));
+                        }
+                        break;
+                    }
+                }
+            }
+            else if (field.type() >= IPT_JOYSTICK_UP && field.type() <= IPT_JOYSTICK_RIGHT)
+            {
+                unsigned id = 0;
+                switch (field.type()) {
+                    case IPT_JOYSTICK_UP: id = RETRO_DEVICE_ID_JOYPAD_UP; break;
+                    case IPT_JOYSTICK_DOWN: id = RETRO_DEVICE_ID_JOYPAD_DOWN; break;
+                    case IPT_JOYSTICK_LEFT: id = RETRO_DEVICE_ID_JOYPAD_LEFT; break;
+                    case IPT_JOYSTICK_RIGHT: id = RETRO_DEVICE_ID_JOYPAD_RIGHT; break;
+                }
+                field.set_value(fmtowns::libretro_osd::joypad_pressed(field.player(), id));
+            }
+            else if (field.type() >= IPT_BUTTON1 && field.type() <= IPT_BUTTON16)
+            {
+                unsigned id = 0;
+                switch (field.type()) {
+                    case IPT_BUTTON1: id = RETRO_DEVICE_ID_JOYPAD_B; break; // A
+                    case IPT_BUTTON2: id = RETRO_DEVICE_ID_JOYPAD_A; break; // B
+                    case IPT_BUTTON3: id = RETRO_DEVICE_ID_JOYPAD_Y; break; // Marty Zoom
+                    case IPT_BUTTON4: id = RETRO_DEVICE_ID_JOYPAD_X; break;
+                    case IPT_BUTTON5: id = RETRO_DEVICE_ID_JOYPAD_L; break;
+                    case IPT_BUTTON6: id = RETRO_DEVICE_ID_JOYPAD_R; break;
+                    case IPT_BUTTON7: id = RETRO_DEVICE_ID_JOYPAD_L2; break;
+                    case IPT_BUTTON8: id = RETRO_DEVICE_ID_JOYPAD_R2; break;
+                }
+                if (id) field.set_value(fmtowns::libretro_osd::joypad_pressed(field.player(), id));
+            }
+            else if (field.type() == IPT_START)
+            {
+                field.set_value(fmtowns::libretro_osd::joypad_pressed(field.player(), RETRO_DEVICE_ID_JOYPAD_START));
+            }
+            else if (field.type() == IPT_SELECT)
+            {
+                field.set_value(fmtowns::libretro_osd::joypad_pressed(field.player(), RETRO_DEVICE_ID_JOYPAD_SELECT));
+            }
+        }
+    }
+}
+
 
 class headless_machine_manager : public machine_manager
 {
@@ -283,7 +435,19 @@ public:
 		m_options->set_value(OPTION_SLEEP, false, OPTION_PRIORITY_CMDLINE);
 		m_options->set_value(OPTION_NVRAM_SAVE, true, OPTION_PRIORITY_CMDLINE);
 		set_option(*m_options, OPTION_MEDIAPATH, config.bios_directory);
+		set_option(*m_options, OPTION_SAMPLERATE, "44100");
 		set_option(*m_options, OPTION_CFG_DIRECTORY, config.cfg_directory);
+
+		// Support for Port 2 Pad/Mouse option
+		if (config.port2_type == "pad")
+		{
+			set_option(*m_options, "pad2", "townspad");
+		}
+		else
+		{
+			set_option(*m_options, "pad2", "mouse");
+		}
+
 		set_option(*m_options, OPTION_NVRAM_DIRECTORY, config.nvram_directory);
 		set_option(*m_options, OPTION_STATE_DIRECTORY, join_path(config.nvram_directory, "state"));
 		set_option(*m_options, OPTION_SNAPSHOT_DIRECTORY, join_path(config.nvram_directory, "snap"));
@@ -341,6 +505,10 @@ public:
 		append_canary_line("session_after_libretro_start_ok\n");
 		for (screen_device &screen : screen_device_enumerator(m_machine->root_device()))
 			screen.set_video_attributes(VIDEO_ALWAYS_UPDATE);
+
+		// Boost MAME master gain to 2.0 (standard for many MAME cores to reach 0dB)
+		m_machine->sound().set_master_gain(2.0f);
+
 		m_running = true;
 		return true;
 	}
@@ -349,7 +517,9 @@ public:
 	{
 		if (m_running && m_machine)
 		{
+            fmtowns::libretro_osd::audio_begin_frame();
 			m_machine->libretro_run_slice();
+            fmtowns::libretro_osd::audio_end_frame();
 		}
 	}
 

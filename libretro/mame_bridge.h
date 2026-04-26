@@ -14,6 +14,7 @@ struct boot_config
 	std::string content_path;
 	std::string cfg_directory;
 	std::string nvram_directory;
+	std::string port2_type; // "mouse" or "pad"
 };
 
 struct runtime_snapshot
