@@ -9,6 +9,7 @@
 #include "render.h"
 #include "osd_libretro.h"
 #include "osdepend.h"
+#include "speaker.h"
 #include "screen.h"
 #include "ui/menuitem.h"
 #include "ui/uimain.h"
@@ -339,6 +340,8 @@ public:
 		}
 
 		append_canary_line("session_after_libretro_start_ok\n");
+		for (speaker_device &speaker : speaker_device_enumerator(m_machine->root_device()))
+			speaker.set_sound_hook(true);
 		for (screen_device &screen : screen_device_enumerator(m_machine->root_device()))
 			screen.set_video_attributes(VIDEO_ALWAYS_UPDATE);
 		m_running = true;
@@ -631,6 +634,23 @@ int emulator_info::start_frontend(emu_options &, osd_interface &, int, char *[])
 bool emulator_info::draw_user_interface(running_machine &) { return false; }
 void emulator_info::periodic_check() { }
 bool emulator_info::frame_hook() { return false; }
-void emulator_info::sound_hook(const std::map<std::string, std::vector<std::pair<const float *, int>>> &) { }
+void emulator_info::sound_hook(const std::map<std::string, std::vector<std::pair<const float *, int>>> &sound)
+{
+	if (sound.empty())
+		return;
+
+	for (const auto &entry : sound)
+	{
+		const auto &buffers = entry.second;
+		if (buffers.empty() || !buffers[0].first || buffers[0].second <= 0)
+			continue;
+
+		const std::size_t frames = static_cast<std::size_t>(buffers[0].second);
+		const float *left = buffers[0].first;
+		const float *right = (buffers.size() > 1 && buffers[1].first) ? buffers[1].first : nullptr;
+		fmtowns::libretro_osd::push_mame_audio(left, right, frames);
+		break;
+	}
+}
 void emulator_info::layout_script_cb(layout_file &, const char *) { }
 bool emulator_info::standalone() { return false; }

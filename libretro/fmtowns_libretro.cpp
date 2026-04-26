@@ -334,8 +334,11 @@ public:
 			render_placeholder_frame();
 		}
 
-		g_run_stage.store(static_cast<unsigned>(run_stage::audio));
-		push_audio_frame();
+		if (!(m_mame && m_mame->running()))
+		{
+			g_run_stage.store(static_cast<unsigned>(run_stage::audio));
+			push_audio_frame();
+		}
 
 		++m_frame;
 		g_last_completed_frame.store(m_frame);

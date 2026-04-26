@@ -190,6 +190,38 @@ void push_silence(double sample_rate, double fps)
 	}
 }
 
+void push_mame_audio(const float *left, const float *right, std::size_t frames)
+{
+	if (frames == 0)
+		return;
+
+	if (!left)
+		left = right;
+	if (!right)
+		right = left;
+
+	static std::vector<int16_t> interleaved;
+	interleaved.resize(frames * 2);
+
+	for (std::size_t i = 0; i < frames; ++i)
+	{
+		const float l = left ? std::clamp(left[i], -1.0f, 1.0f) : 0.0f;
+		const float r = right ? std::clamp(right[i], -1.0f, 1.0f) : l;
+		interleaved[(i * 2) + 0] = static_cast<int16_t>(l * 32767.0f);
+		interleaved[(i * 2) + 1] = static_cast<int16_t>(r * 32767.0f);
+	}
+
+	if (g_audio_batch)
+		g_audio_batch(interleaved.data(), frames);
+	else if (g_audio)
+	{
+		for (std::size_t i = 0; i < frames; ++i)
+		{
+			g_audio(interleaved[(i * 2) + 0], interleaved[(i * 2) + 1]);
+		}
+	}
+}
+
 void log(enum retro_log_level level, const char *fmt, ...)
 {
 	char buffer[1024];
