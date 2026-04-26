@@ -5,6 +5,9 @@
 #include "emuopts.h"
 #include "main.h"
 #include "mconfig.h"
+#include "fujitsu/fmtowns_capture.h"
+#include "render.h"
+#include "osd_libretro.h"
 #include "osdepend.h"
 #include "screen.h"
 #include "ui/menuitem.h"
@@ -12,11 +15,15 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <fstream>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
+
+namespace fmtowns::screen_capture {
+} // namespace fmtowns::screen_capture
 
 namespace {
 
@@ -26,6 +33,12 @@ public:
 	bool open(std::string const &, std::string const &, int &) override { return false; }
 	void close() override { }
 	bool get_bitmap(char32_t, bitmap_argb32 &, std::int32_t &, std::int32_t &, std::int32_t &) override { return false; }
+};
+
+class headless_ui_manager : public ui_manager
+{
+public:
+	using ui_manager::ui_manager;
 };
 
 class headless_osd_interface : public osd_interface
@@ -43,8 +56,27 @@ public:
 	bool no_sound() override { return false; }
 	bool sound_external_per_channel_volume() override { return false; }
 	bool sound_split_streams_per_source() override { return false; }
-	uint32_t sound_get_generation() override { return 1; }
-	osd::audio_info sound_get_information() override { return osd::audio_info(); }
+	uint32_t sound_get_generation() override { return m_audio_generation; }
+	osd::audio_info sound_get_information() override
+	{
+		osd::audio_info info = {};
+		info.m_generation = m_audio_generation;
+		info.m_default_sink = m_default_sink_id;
+		info.m_default_source = 0;
+
+		osd::audio_info::node_info sink = {};
+		sink.m_id = m_default_sink_id;
+		sink.m_name = "libretro";
+		sink.m_display_name = "Libretro Audio";
+		sink.m_rate = { 44100, 8000, 96000 };
+		sink.m_sinks = 2;
+		sink.m_sources = 0;
+		sink.m_port_names = { "Left", "Right" };
+		sink.m_port_positions = { osd::channel_position::FL(), osd::channel_position::FR() };
+		info.m_nodes.emplace_back(std::move(sink));
+
+		return info;
+	}
 	uint32_t sound_stream_sink_open(uint32_t, std::string, uint32_t) override { return ++m_next_stream_id; }
 	uint32_t sound_stream_source_open(uint32_t, std::string, uint32_t) override { return ++m_next_stream_id; }
 	void sound_stream_close(uint32_t) override { }
@@ -75,6 +107,8 @@ public:
 	std::vector<osd::network_device_info> list_network_devices() override { return {}; }
 
 private:
+	static constexpr uint32_t m_audio_generation = 1;
+	static constexpr uint32_t m_default_sink_id = 1;
 	bool m_verbose = false;
 	uint32_t m_next_stream_id = 0;
 };
@@ -85,12 +119,11 @@ public:
 	headless_machine_manager(emu_options &options, osd_interface &osd)
 		: machine_manager(options, osd)
 	{
-		start_http_server();
 	}
 
 	ui_manager *create_ui(running_machine &machine) override
 	{
-		m_ui = std::make_unique<ui_manager>(machine);
+		m_ui = std::make_unique<headless_ui_manager>(machine);
 		return m_ui.get();
 	}
 
@@ -145,11 +178,11 @@ const char *slot_for_extension(const std::string &extension)
 			extension == "d77" || extension == "d88" || extension == "1dd" ||
 			extension == "cqm" || extension == "cqi" || extension == "dsk" ||
 			extension == "bin")
-		return "flop1";
+		return "floppydisk1";
 
 	if (extension == "hd" || extension == "hdv" || extension == "2mg" ||
 			extension == "hdi")
-		return "hard1";
+		return "harddisk1";
 
 	return nullptr;
 }
@@ -191,6 +224,33 @@ std::string first_m3u_entry(const std::string &playlist)
 	return {};
 }
 
+constexpr const char *k_canary_path = "C:\\sw\\fmtowns-master\\build\\libretro64\\boot_canary.log";
+
+void append_canary_line(const char *line)
+{
+	if (!line)
+		return;
+
+	if (FILE *canary = std::fopen(k_canary_path, "ab"))
+	{
+		std::fputs(line, canary);
+		std::fclose(canary);
+	}
+}
+
+const char *phase_name(machine_phase phase)
+{
+	switch (phase)
+	{
+	case machine_phase::PREINIT: return "PREINIT";
+	case machine_phase::INIT: return "INIT";
+	case machine_phase::RESET: return "RESET";
+	case machine_phase::RUNNING: return "RUNNING";
+	case machine_phase::EXIT: return "EXIT";
+	}
+	return "UNKNOWN";
+}
+
 } // namespace
 
 namespace fmtowns::mame_bridge {
@@ -201,6 +261,7 @@ public:
 	bool start(const boot_config &config, std::string &error)
 	{
 		stop();
+		append_canary_line("session_start_enter\n");
 
 		const int driver_index = driver_list::find(config.model.c_str());
 		if (driver_index < 0)
@@ -265,14 +326,21 @@ public:
 		m_machine = std::make_unique<running_machine>(*m_config, *m_manager);
 		m_manager->set_machine(m_machine.get());
 
+		append_canary_line("session_before_libretro_start\n");
 		const int result = m_machine->libretro_start(true);
 		if (result != EMU_ERR_NONE)
 		{
+			char buffer[96];
+			std::snprintf(buffer, sizeof(buffer), "session_libretro_start_fail_%d\n", result);
+			append_canary_line(buffer);
 			error = "MAME machine start failed with code " + std::to_string(result);
 			stop();
 			return false;
 		}
 
+		append_canary_line("session_after_libretro_start_ok\n");
+		for (screen_device &screen : screen_device_enumerator(m_machine->root_device()))
+			screen.set_video_attributes(VIDEO_ALWAYS_UPDATE);
 		m_running = true;
 		return true;
 	}
@@ -280,7 +348,42 @@ public:
 	void run_slice()
 	{
 		if (m_running && m_machine)
+		{
 			m_machine->libretro_run_slice();
+		}
+	}
+
+	void force_video_update()
+	{
+		if (m_running && m_machine)
+		{
+			for (screen_device &screen : screen_device_enumerator(m_machine->root_device()))
+				screen.update_now();
+		}
+	}
+
+	void emit_boot_snapshot(const char *stage)
+	{
+		if (m_running && m_machine)
+			log_boot_snapshot(stage);
+	}
+
+	void emit_video_snapshot(const char *stage)
+	{
+		if (m_running && m_machine)
+			log_video_snapshot(stage);
+	}
+
+	bool execution_snapshot(runtime_snapshot &snapshot) const
+	{
+		if (!m_running || !m_machine)
+			return false;
+
+		snapshot.machine_time_seconds = m_machine->time().as_double();
+		snapshot.screen_frame = current_frame_number();
+		snapshot.cpu_pc = first_cpu_pc();
+		snapshot.phase = static_cast<unsigned>(m_machine->phase());
+		return true;
 	}
 
 	void reset()
@@ -324,16 +427,32 @@ public:
 			if (area.empty())
 				continue;
 
-			width = std::min<unsigned>(static_cast<unsigned>(area.width()), max_width);
-			height = std::min<unsigned>(static_cast<unsigned>(area.height()), max_height);
+			if (fmtowns::libretro_osd::copy_captured_xrgb8888(pixels, max_width, max_height, width, height))
+				return true;
+
+			const unsigned src_width = static_cast<unsigned>(area.width());
+			const unsigned src_height = static_cast<unsigned>(area.height());
+			width = max_width;
+			height = max_height;
 			if (!width || !height)
 				return false;
 
-			m_video_buffer.resize(static_cast<size_t>(area.width()) * static_cast<size_t>(area.height()));
-			screen.pixels(m_video_buffer.data());
+			const size_t sample_count = static_cast<size_t>(src_width) * static_cast<size_t>(src_height);
+			if (m_video_buffer.size() < sample_count)
+				m_video_buffer.resize(sample_count);
 
+			screen.pixels(m_video_buffer.data());
 			for (unsigned y = 0; y < height; ++y)
-				std::copy_n(m_video_buffer.data() + (static_cast<size_t>(y) * area.width()), width, pixels + (static_cast<size_t>(y) * max_width));
+			{
+				uint32_t *dst = pixels + (static_cast<size_t>(y) * max_width);
+				const unsigned src_y = std::min<unsigned>(src_height - 1, (static_cast<unsigned long long>(y) * src_height) / height);
+				const uint32_t *src_row = m_video_buffer.data() + (static_cast<size_t>(src_y) * src_width);
+				for (unsigned x = 0; x < width; ++x)
+				{
+					const unsigned src_x = std::min<unsigned>(src_width - 1, (static_cast<unsigned long long>(x) * src_width) / width);
+					dst[x] = src_row[src_x];
+				}
+			}
 
 			return true;
 		}
@@ -342,6 +461,95 @@ public:
 	}
 
 private:
+	std::string first_cpu_snapshot() const
+	{
+		if (!m_machine)
+			return "cpu=<none>";
+
+		for (device_t &device : device_enumerator(m_machine->root_device()))
+		{
+			cpu_device *cpu = nullptr;
+			if (!device.interface(cpu) || cpu == nullptr)
+				continue;
+
+			char buffer[128];
+			std::snprintf(buffer, sizeof(buffer), "cpu=%s pc=%08llx",
+					device.tag(),
+					static_cast<unsigned long long>(cpu->pcbase()));
+			return buffer;
+		}
+
+		return "cpu=<none>";
+	}
+
+	uint64_t first_cpu_pc() const
+	{
+		if (!m_machine)
+			return 0;
+
+		for (device_t &device : device_enumerator(m_machine->root_device()))
+		{
+			cpu_device *cpu = nullptr;
+			if (!device.interface(cpu) || cpu == nullptr)
+				continue;
+
+			return static_cast<uint64_t>(cpu->pcbase());
+		}
+
+		return 0;
+	}
+
+	void log_boot_snapshot(const char *stage) const
+	{
+		if (!m_machine || !stage)
+			return;
+
+		const std::string cpu_snapshot = first_cpu_snapshot();
+		fmtowns::libretro_osd::log(RETRO_LOG_INFO,
+				"BOOT %s phase=%s time=%.6f frame=%llu %s\n",
+				stage,
+				phase_name(m_machine->phase()),
+				m_machine->time().as_double(),
+				static_cast<unsigned long long>(current_frame_number()),
+				cpu_snapshot.c_str());
+	}
+
+	void log_video_snapshot(const char *stage) const
+	{
+		if (!m_machine || !stage)
+			return;
+
+		for (screen_device &screen : screen_device_enumerator(m_machine->root_device()))
+		{
+			const rectangle &area = screen.visible_area();
+			const uint32_t top_left = area.empty() ? 0 : screen.pixel(area.min_x, area.min_y);
+			const uint32_t center = area.empty() ? 0 : screen.pixel((area.min_x + area.max_x) / 2, (area.min_y + area.max_y) / 2);
+			const bool live = m_machine->render().is_live(screen);
+			fmtowns::libretro_osd::log(RETRO_LOG_INFO,
+					"VIDEO %s phase=%s time=%.6f frame=%llu vpos=%d hpos=%d partials=%d live=%s vis=%dx%d top_left=%08x center=%08x\n",
+					stage,
+					phase_name(m_machine->phase()),
+					m_machine->time().as_double(),
+					static_cast<unsigned long long>(screen.frame_number()),
+					screen.vpos(),
+					screen.hpos(),
+					screen.partial_updates(),
+					live ? "yes" : "no",
+					area.width(),
+					area.height(),
+					top_left,
+					center);
+			break;
+		}
+	}
+
+	uint64_t current_frame_number() const
+	{
+		for (screen_device &screen : screen_device_enumerator(m_machine->root_device()))
+			return screen.frame_number();
+		return 0;
+	}
+
 	std::unique_ptr<emu_options> m_options;
 	std::unique_ptr<headless_osd_interface> m_osd;
 	std::unique_ptr<headless_machine_manager> m_manager;
@@ -381,6 +589,26 @@ void session::stop()
 bool session::running() const
 {
 	return m_impl->running();
+}
+
+void session::log_boot_snapshot(const char *stage)
+{
+	m_impl->emit_boot_snapshot(stage);
+}
+
+void session::log_video_snapshot(const char *stage)
+{
+	m_impl->emit_video_snapshot(stage);
+}
+
+void session::force_video_update()
+{
+	m_impl->force_video_update();
+}
+
+bool session::execution_snapshot(runtime_snapshot &snapshot) const
+{
+	return m_impl->execution_snapshot(snapshot);
 }
 
 bool session::copy_video_frame(uint32_t *pixels, unsigned max_width, unsigned max_height, unsigned &width, unsigned &height)

@@ -17,7 +17,7 @@ if not exist "%MSYS2_ROOT%\msys2_shell.cmd" (
 if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
 
 echo Refreshing MAME fmtowns static libraries...
-call "%MSYS2_ROOT%\msys2_shell.cmd" -defterm -no-start -ucrt64 -c "cd /c/sw/fmtowns-master && make SUBTARGET=fmtowns -j6"
+call "%MSYS2_ROOT%\msys2_shell.cmd" -defterm -no-start -ucrt64 -c "cd /c/sw/fmtowns-master && CPPFLAGS+='-I/c/sw/fmtowns-master/src/mame' make SUBTARGET=fmtowns -j6"
 if errorlevel 1 (
 	echo MAME static library build failed.
 	exit /b 1

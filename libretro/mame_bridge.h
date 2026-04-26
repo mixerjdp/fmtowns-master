@@ -1,6 +1,7 @@
 #ifndef FMTOWNS_MAME_BRIDGE_H
 #define FMTOWNS_MAME_BRIDGE_H
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -15,6 +16,14 @@ struct boot_config
 	std::string nvram_directory;
 };
 
+struct runtime_snapshot
+{
+	double machine_time_seconds = 0.0;
+	uint64_t screen_frame = 0;
+	uint64_t cpu_pc = 0;
+	unsigned phase = 0;
+};
+
 class session
 {
 public:
@@ -26,6 +35,10 @@ public:
 
 	bool start(const boot_config &config, std::string &error);
 	void run_slice();
+	void log_boot_snapshot(const char *stage);
+	void log_video_snapshot(const char *stage);
+	void force_video_update();
+	bool execution_snapshot(runtime_snapshot &snapshot) const;
 	void reset();
 	void stop();
 	bool running() const;

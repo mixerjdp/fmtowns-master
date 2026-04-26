@@ -1,8 +1,11 @@
 #include "osd_libretro.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
+#include <vector>
 
 namespace fmtowns::libretro_osd {
 namespace {
@@ -20,6 +23,9 @@ retro_log_printf_t g_log = nullptr;
 
 std::array<int16_t, k_audio_channels * k_max_audio_frames> g_silence = {};
 double g_audio_remainder = 0.0;
+std::vector<uint32_t> g_captured_frame;
+unsigned g_captured_width = 0;
+unsigned g_captured_height = 0;
 
 } // namespace
 
@@ -108,6 +114,53 @@ std::string variable_value(const char *key, const char *fallback)
 		return variable.value;
 
 	return fallback ? fallback : "";
+}
+
+void capture_xrgb8888(const uint32_t *pixels, unsigned width, unsigned height, std::size_t pitch)
+{
+	if (!pixels || !width || !height)
+		return;
+
+	const std::size_t row_pixels = pitch / sizeof(uint32_t);
+	if (row_pixels < width)
+		return;
+
+	g_captured_frame.resize(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
+	for (unsigned y = 0; y < height; ++y)
+	{
+		const uint32_t *src_row = pixels + (static_cast<std::size_t>(y) * row_pixels);
+		uint32_t *dst_row = g_captured_frame.data() + (static_cast<std::size_t>(y) * width);
+		std::memcpy(dst_row, src_row, static_cast<std::size_t>(width) * sizeof(uint32_t));
+	}
+
+	g_captured_width = width;
+	g_captured_height = height;
+}
+
+bool copy_captured_xrgb8888(uint32_t *pixels, unsigned max_width, unsigned max_height, unsigned &width, unsigned &height)
+{
+	width = 0;
+	height = 0;
+
+	if (!pixels || g_captured_frame.empty() || !g_captured_width || !g_captured_height || !max_width || !max_height)
+		return false;
+
+	width = max_width;
+	height = max_height;
+
+	for (unsigned y = 0; y < height; ++y)
+	{
+		uint32_t *dst = pixels + (static_cast<std::size_t>(y) * max_width);
+		const unsigned src_y = std::min<unsigned>(g_captured_height - 1, (static_cast<unsigned long long>(y) * g_captured_height) / height);
+		const uint32_t *src_row = g_captured_frame.data() + (static_cast<std::size_t>(src_y) * g_captured_width);
+		for (unsigned x = 0; x < width; ++x)
+		{
+			const unsigned src_x = std::min<unsigned>(g_captured_width - 1, (static_cast<unsigned long long>(x) * g_captured_width) / width);
+			dst[x] = src_row[src_x];
+		}
+	}
+
+	return true;
 }
 
 void present_xrgb8888(const uint32_t *pixels, unsigned width, unsigned height, std::size_t pitch)

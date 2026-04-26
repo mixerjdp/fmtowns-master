@@ -44,6 +44,22 @@
 #include <emscripten.h>
 #endif
 
+namespace
+{
+constexpr const char *k_boot_canary_path = "C:\\sw\\fmtowns-master\\build\\libretro64\\boot_canary.log";
+
+void append_boot_canary(const char *line)
+{
+	if (!line)
+		return;
+
+	if (FILE *canary = std::fopen(k_boot_canary_path, "ab"))
+	{
+		std::fputs(line, canary);
+		std::fclose(canary);
+	}
+}
+}
 
 
 //**************************************************************************
@@ -139,6 +155,7 @@ std::string running_machine::describe_context() const
 
 void running_machine::start()
 {
+	append_boot_canary("start_enter\n");
 	// initialize basic can't-fail systems here
 	m_configuration = std::make_unique<configuration_manager>(*this);
 	m_input = std::make_unique<input_manager>(*this);
@@ -260,6 +277,7 @@ void running_machine::start()
 	}
 
 	manager().update_machine();
+	append_boot_canary("start_exit\n");
 }
 
 
@@ -421,10 +439,11 @@ int running_machine::libretro_start(bool quiet)
 
 	try
 	{
-		m_manager.http()->clear();
 		m_current_phase = machine_phase::INIT;
+		append_boot_canary("libretro_start_enter\n");
 
 		start();
+		append_boot_canary("libretro_start_after_start\n");
 		m_save.allow_registration(false);
 
 		manager().before_load_settings(*this);
@@ -437,13 +456,13 @@ int running_machine::libretro_start(bool quiet)
 			sound().start_recording();
 
 		m_hard_reset_pending = false;
-		manager().ui_initialize(*this);
+		video().set_throttled(false);
+		// Libretro owns presentation, so skip the frontend startup UI path here.
 		soft_reset();
+		append_boot_canary("libretro_start_after_soft_reset\n");
 
 		if (m_saveload_schedule != saveload_schedule::NONE)
 			handle_saveload();
-
-		export_http_api();
 	}
 	catch (emu_fatalerror const &fatal)
 	{

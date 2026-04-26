@@ -23,6 +23,9 @@ bool joypad_pressed(unsigned port, unsigned id);
 std::string system_directory();
 std::string variable_value(const char *key, const char *fallback);
 
+void capture_xrgb8888(const uint32_t *pixels, unsigned width, unsigned height, std::size_t pitch);
+bool copy_captured_xrgb8888(uint32_t *pixels, unsigned max_width, unsigned max_height, unsigned &width, unsigned &height);
+
 void present_xrgb8888(const uint32_t *pixels, unsigned width, unsigned height, std::size_t pitch);
 void push_silence(double sample_rate, double fps);
 

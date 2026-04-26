@@ -92,10 +92,13 @@
 
 #include "emu.h"
 #include "fmtowns.h"
+#include "fmtowns_capture.h"
 
 #include "machine/pic8259.h"
 #include "machine/ram.h"
 #include "screen.h"
+
+#include <cstdio>
 
 #define LOG_VID     (1U << 1)
 #define LOG_IRQ     (1U << 2)
@@ -106,6 +109,24 @@
 
 #define VERBOSE (LOG_GENERAL | LOG_UNKNOWN)
 #include "logmacro.h"
+
+namespace {
+
+constexpr const char *k_screen_trace_path = "C:\\sw\\fmtowns-master\\build\\libretro64\\fmtowns_screen_update.log";
+
+void append_screen_trace(const char *line)
+{
+	if (!line)
+		return;
+
+	if (FILE *trace = std::fopen(k_screen_trace_path, "ab"))
+	{
+		std::fputs(line, trace);
+		std::fclose(trace);
+	}
+}
+
+} // namespace
 
 
 //#define CRTC_REG_DISP 1
@@ -1520,6 +1541,14 @@ void towns_state::video_start()
 
 uint32_t towns_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
+	static uint64_t s_screen_update_trace_count = 0;
+	static u8 s_last_layer_ctrl = 0xff;
+	static u8 s_last_video0 = 0xff;
+	static u8 s_last_video1 = 0xff;
+	static u8 s_last_tvram = 0xff;
+	static u8 s_last_plane = 0xff;
+	static u8 s_last_page = 0xff;
+	static unsigned s_last_nonzero_samples = 0xffffffffU;
 	bool layer1_en = true, layer2_en = true;
 	bitmap.fill(0x00000000, cliprect);
 
@@ -1550,6 +1579,64 @@ uint32_t towns_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap,
 		if((m_video.towns_layer_ctrl & 0x03) != 0 && layer2_en)
 			towns_crtc_draw_layer(bitmap,&cliplayer1,1);
 	}
+
+	unsigned nonzero_samples = 0;
+	for (int y = cliprect.min_y; y <= cliprect.max_y; y += 16)
+	{
+		for (int x = cliprect.min_x; x <= cliprect.max_x; x += 16)
+		{
+			if (bitmap.pix(y, x) != 0)
+				++nonzero_samples;
+		}
+	}
+
+	// Capture the rendered scene directly so the libretro bridge does not need to
+	// infer the frame from the global video state after the fact.
+	if (bitmap.width() > 0 && bitmap.height() > 0)
+	{
+		fmtowns::screen_capture::capture_xrgb8888(
+			&bitmap.pix(0),
+			static_cast<unsigned>(bitmap.width()),
+			static_cast<unsigned>(bitmap.height()),
+			static_cast<std::size_t>(bitmap.rowpixels()) * sizeof(uint32_t));
+	}
+
+	const bool state_changed = (s_last_layer_ctrl != m_video.towns_layer_ctrl)
+		|| (s_last_video0 != m_video.towns_video_reg[0])
+		|| (s_last_video1 != m_video.towns_video_reg[1])
+		|| (s_last_tvram != m_video.towns_tvram_enable)
+		|| (s_last_plane != m_video.towns_display_plane)
+		|| (s_last_page != m_video.towns_display_page_sel)
+		|| (s_last_nonzero_samples != nonzero_samples);
+	if (s_screen_update_trace_count < 3 || state_changed)
+	{
+		const uint32_t top_left = bitmap.pix(cliprect.min_y, cliprect.min_x);
+		const uint32_t center = bitmap.pix((cliprect.min_y + cliprect.max_y) / 2, (cliprect.min_x + cliprect.max_x) / 2);
+		char buffer[320];
+		std::snprintf(buffer, sizeof(buffer),
+			"FMTOWNS screen_update #%llu frame=%llu time=%.6f layer_ctrl=%02x video=%02x/%02x tvram=%u plane=%u page=%u nonzero16=%u top_left=%08x center=%08x\n",
+			static_cast<unsigned long long>(s_screen_update_trace_count),
+			static_cast<unsigned long long>(screen.frame_number()),
+			machine().time().as_double(),
+			m_video.towns_layer_ctrl,
+			m_video.towns_video_reg[0],
+			m_video.towns_video_reg[1],
+			m_video.towns_tvram_enable,
+			m_video.towns_display_plane,
+			m_video.towns_display_page_sel,
+			nonzero_samples,
+			top_left,
+			center);
+		append_screen_trace(buffer);
+	}
+	s_last_layer_ctrl = m_video.towns_layer_ctrl;
+	s_last_video0 = m_video.towns_video_reg[0];
+	s_last_video1 = m_video.towns_video_reg[1];
+	s_last_tvram = m_video.towns_tvram_enable;
+	s_last_plane = m_video.towns_display_plane;
+	s_last_page = m_video.towns_display_page_sel;
+	s_last_nonzero_samples = nonzero_samples;
+	++s_screen_update_trace_count;
 
 #if 0
 #ifdef SPR_DEBUG
