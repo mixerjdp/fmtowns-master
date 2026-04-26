@@ -92,7 +92,13 @@ public:
 	void sound_end_update() override { }
 
 	void customize_input_type_list(std::vector<input_type_entry> &) override { }
-	void add_audio_to_recording(const int16_t *, int) override { }
+	void add_audio_to_recording(const int16_t *buffer, int samples_this_frame) override
+	{
+		if (!buffer || samples_this_frame <= 0)
+			return;
+
+		fmtowns::libretro_osd::push_interleaved_audio(buffer, static_cast<std::size_t>(samples_this_frame));
+	}
 	std::vector<ui::menu_item> get_slider_list() override { return {}; }
 
 	osd_font::ptr font_alloc() override { return std::make_unique<headless_font>(); }
@@ -340,8 +346,6 @@ public:
 		}
 
 		append_canary_line("session_after_libretro_start_ok\n");
-		for (speaker_device &speaker : speaker_device_enumerator(m_machine->root_device()))
-			speaker.set_sound_hook(true);
 		for (screen_device &screen : screen_device_enumerator(m_machine->root_device()))
 			screen.set_video_attributes(VIDEO_ALWAYS_UPDATE);
 		m_running = true;
@@ -636,21 +640,7 @@ void emulator_info::periodic_check() { }
 bool emulator_info::frame_hook() { return false; }
 void emulator_info::sound_hook(const std::map<std::string, std::vector<std::pair<const float *, int>>> &sound)
 {
-	if (sound.empty())
-		return;
-
-	for (const auto &entry : sound)
-	{
-		const auto &buffers = entry.second;
-		if (buffers.empty() || !buffers[0].first || buffers[0].second <= 0)
-			continue;
-
-		const std::size_t frames = static_cast<std::size_t>(buffers[0].second);
-		const float *left = buffers[0].first;
-		const float *right = (buffers.size() > 1 && buffers[1].first) ? buffers[1].first : nullptr;
-		fmtowns::libretro_osd::push_mame_audio(left, right, frames);
-		break;
-	}
+	(void)sound;
 }
 void emulator_info::layout_script_cb(layout_file &, const char *) { }
 bool emulator_info::standalone() { return false; }

@@ -190,6 +190,20 @@ void push_silence(double sample_rate, double fps)
 	}
 }
 
+void push_interleaved_audio(const int16_t *samples, std::size_t frames)
+{
+	if (!samples || frames == 0)
+		return;
+
+	if (g_audio_batch)
+		g_audio_batch(samples, frames);
+	else if (g_audio)
+	{
+		for (std::size_t i = 0; i < frames; ++i)
+			g_audio(samples[(i * 2) + 0], samples[(i * 2) + 1]);
+	}
+}
+
 void push_mame_audio(const float *left, const float *right, std::size_t frames)
 {
 	if (frames == 0)
