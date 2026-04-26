@@ -14,6 +14,8 @@ struct boot_config
 	std::string content_path;
 	std::string cfg_directory;
 	std::string nvram_directory;
+	std::string pad1_device;
+	std::string pad2_device;
 };
 
 struct runtime_snapshot

@@ -93,6 +93,11 @@ bool joypad_pressed(unsigned port, unsigned id)
 	return g_input_state && g_input_state(port, RETRO_DEVICE_JOYPAD, 0, id);
 }
 
+bool keyboard_pressed(unsigned key)
+{
+	return g_input_state && g_input_state(0, RETRO_DEVICE_KEYBOARD, 0, key);
+}
+
 std::string system_directory()
 {
 	if (!g_environment)

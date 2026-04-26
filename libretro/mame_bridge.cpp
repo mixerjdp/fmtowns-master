@@ -15,6 +15,7 @@
 #include "ui/uimain.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdio>
 #include <fstream>
@@ -23,10 +24,390 @@
 #include <utility>
 #include <vector>
 
+#include "inputdev.h"
+
 namespace fmtowns::screen_capture {
 } // namespace fmtowns::screen_capture
 
 namespace {
+
+enum retro_key : unsigned
+{
+	RETROK_BACKSPACE = 8,
+	RETROK_TAB = 9,
+	RETROK_CLEAR = 12,
+	RETROK_RETURN = 13,
+	RETROK_PAUSE = 19,
+	RETROK_ESCAPE = 27,
+	RETROK_SPACE = 32,
+	RETROK_MINUS = 45,
+	RETROK_COMMA = 44,
+	RETROK_PERIOD = 46,
+	RETROK_SLASH = 47,
+	RETROK_0 = 48,
+	RETROK_1 = 49,
+	RETROK_2 = 50,
+	RETROK_3 = 51,
+	RETROK_4 = 52,
+	RETROK_5 = 53,
+	RETROK_6 = 54,
+	RETROK_7 = 55,
+	RETROK_8 = 56,
+	RETROK_9 = 57,
+	RETROK_SEMICOLON = 59,
+	RETROK_QUOTE = 39,
+	RETROK_EQUALS = 61,
+	RETROK_LEFTBRACKET = 91,
+	RETROK_BACKSLASH = 92,
+	RETROK_RIGHTBRACKET = 93,
+	RETROK_BACKQUOTE = 96,
+	RETROK_a = 97,
+	RETROK_b = 98,
+	RETROK_c = 99,
+	RETROK_d = 100,
+	RETROK_e = 101,
+	RETROK_f = 102,
+	RETROK_g = 103,
+	RETROK_h = 104,
+	RETROK_i = 105,
+	RETROK_j = 106,
+	RETROK_k = 107,
+	RETROK_l = 108,
+	RETROK_m = 109,
+	RETROK_n = 110,
+	RETROK_o = 111,
+	RETROK_p = 112,
+	RETROK_q = 113,
+	RETROK_r = 114,
+	RETROK_s = 115,
+	RETROK_t = 116,
+	RETROK_u = 117,
+	RETROK_v = 118,
+	RETROK_w = 119,
+	RETROK_x = 120,
+	RETROK_y = 121,
+	RETROK_z = 122,
+	RETROK_DELETE = 127,
+	RETROK_KP0 = 256,
+	RETROK_KP1 = 257,
+	RETROK_KP2 = 258,
+	RETROK_KP3 = 259,
+	RETROK_KP4 = 260,
+	RETROK_KP5 = 261,
+	RETROK_KP6 = 262,
+	RETROK_KP7 = 263,
+	RETROK_KP8 = 264,
+	RETROK_KP9 = 265,
+	RETROK_KP_PERIOD = 266,
+	RETROK_KP_DIVIDE = 267,
+	RETROK_KP_MULTIPLY = 268,
+	RETROK_KP_MINUS = 269,
+	RETROK_KP_PLUS = 270,
+	RETROK_KP_ENTER = 271,
+	RETROK_KP_EQUALS = 272,
+	RETROK_UP = 273,
+	RETROK_DOWN = 274,
+	RETROK_RIGHT = 275,
+	RETROK_LEFT = 276,
+	RETROK_INSERT = 277,
+	RETROK_HOME = 278,
+	RETROK_END = 279,
+	RETROK_PAGEUP = 280,
+	RETROK_PAGEDOWN = 281,
+	RETROK_F1 = 282,
+	RETROK_F2 = 283,
+	RETROK_F3 = 284,
+	RETROK_F4 = 285,
+	RETROK_F5 = 286,
+	RETROK_F6 = 287,
+	RETROK_F7 = 288,
+	RETROK_F8 = 289,
+	RETROK_F9 = 290,
+	RETROK_F10 = 291,
+	RETROK_F11 = 292,
+	RETROK_F12 = 293,
+	RETROK_NUMLOCK = 300,
+	RETROK_CAPSLOCK = 301,
+	RETROK_SCROLLOCK = 302,
+	RETROK_RSHIFT = 303,
+	RETROK_LSHIFT = 304,
+	RETROK_RCTRL = 305,
+	RETROK_LCTRL = 306,
+	RETROK_RALT = 307,
+	RETROK_LALT = 308,
+	RETROK_RMETA = 309,
+	RETROK_LMETA = 310,
+	RETROK_MENU = 319,
+	RETROK_PRINT = 316,
+	RETROK_BREAK = 318,
+	RETROK_OEM_102 = 323,
+};
+
+enum retro_joypad_id : unsigned
+{
+	RETRO_DEVICE_ID_JOYPAD_B = 0,
+	RETRO_DEVICE_ID_JOYPAD_Y = 1,
+	RETRO_DEVICE_ID_JOYPAD_SELECT = 2,
+	RETRO_DEVICE_ID_JOYPAD_START = 3,
+	RETRO_DEVICE_ID_JOYPAD_UP = 4,
+	RETRO_DEVICE_ID_JOYPAD_DOWN = 5,
+	RETRO_DEVICE_ID_JOYPAD_LEFT = 6,
+	RETRO_DEVICE_ID_JOYPAD_RIGHT = 7,
+	RETRO_DEVICE_ID_JOYPAD_A = 8,
+	RETRO_DEVICE_ID_JOYPAD_X = 9,
+	RETRO_DEVICE_ID_JOYPAD_L = 10,
+	RETRO_DEVICE_ID_JOYPAD_R = 11,
+	RETRO_DEVICE_ID_JOYPAD_L2 = 12,
+	RETRO_DEVICE_ID_JOYPAD_R2 = 13,
+	RETRO_DEVICE_ID_JOYPAD_L3 = 14,
+	RETRO_DEVICE_ID_JOYPAD_R3 = 15,
+};
+
+struct keyboard_item_mapping
+{
+	input_item_id item_id;
+	retro_key key;
+	const char *name;
+};
+
+enum class pad_item_kind
+{
+	axis_x,
+	axis_y,
+	up,
+	down,
+	left,
+	right,
+	button1,
+	button2,
+	button3,
+	button4,
+	button5,
+	button6,
+	start,
+	select
+};
+
+struct pad_item_mapping
+{
+	input_item_id item_id;
+	pad_item_kind kind;
+	const char *name;
+};
+
+struct pad_device_state
+{
+	unsigned port = 0;
+};
+
+constexpr std::array<keyboard_item_mapping, 112> k_keyboard_items = {{
+	{ ITEM_ID_A, RETROK_a, "A" },
+	{ ITEM_ID_B, RETROK_b, "B" },
+	{ ITEM_ID_C, RETROK_c, "C" },
+	{ ITEM_ID_D, RETROK_d, "D" },
+	{ ITEM_ID_E, RETROK_e, "E" },
+	{ ITEM_ID_F, RETROK_f, "F" },
+	{ ITEM_ID_G, RETROK_g, "G" },
+	{ ITEM_ID_H, RETROK_h, "H" },
+	{ ITEM_ID_I, RETROK_i, "I" },
+	{ ITEM_ID_J, RETROK_j, "J" },
+	{ ITEM_ID_K, RETROK_k, "K" },
+	{ ITEM_ID_L, RETROK_l, "L" },
+	{ ITEM_ID_M, RETROK_m, "M" },
+	{ ITEM_ID_N, RETROK_n, "N" },
+	{ ITEM_ID_O, RETROK_o, "O" },
+	{ ITEM_ID_P, RETROK_p, "P" },
+	{ ITEM_ID_Q, RETROK_q, "Q" },
+	{ ITEM_ID_R, RETROK_r, "R" },
+	{ ITEM_ID_S, RETROK_s, "S" },
+	{ ITEM_ID_T, RETROK_t, "T" },
+	{ ITEM_ID_U, RETROK_u, "U" },
+	{ ITEM_ID_V, RETROK_v, "V" },
+	{ ITEM_ID_W, RETROK_w, "W" },
+	{ ITEM_ID_X, RETROK_x, "X" },
+	{ ITEM_ID_Y, RETROK_y, "Y" },
+	{ ITEM_ID_Z, RETROK_z, "Z" },
+	{ ITEM_ID_0, RETROK_0, "0" },
+	{ ITEM_ID_1, RETROK_1, "1" },
+	{ ITEM_ID_2, RETROK_2, "2" },
+	{ ITEM_ID_3, RETROK_3, "3" },
+	{ ITEM_ID_4, RETROK_4, "4" },
+	{ ITEM_ID_5, RETROK_5, "5" },
+	{ ITEM_ID_6, RETROK_6, "6" },
+	{ ITEM_ID_7, RETROK_7, "7" },
+	{ ITEM_ID_8, RETROK_8, "8" },
+	{ ITEM_ID_9, RETROK_9, "9" },
+	{ ITEM_ID_F1, RETROK_F1, "F1" },
+	{ ITEM_ID_F2, RETROK_F2, "F2" },
+	{ ITEM_ID_F3, RETROK_F3, "F3" },
+	{ ITEM_ID_F4, RETROK_F4, "F4" },
+	{ ITEM_ID_F5, RETROK_F5, "F5" },
+	{ ITEM_ID_F6, RETROK_F6, "F6" },
+	{ ITEM_ID_F7, RETROK_F7, "F7" },
+	{ ITEM_ID_F8, RETROK_F8, "F8" },
+	{ ITEM_ID_F9, RETROK_F9, "F9" },
+	{ ITEM_ID_F10, RETROK_F10, "F10" },
+	{ ITEM_ID_F11, RETROK_F11, "F11" },
+	{ ITEM_ID_F12, RETROK_F12, "F12" },
+	{ ITEM_ID_ESC, RETROK_ESCAPE, "Esc" },
+	{ ITEM_ID_TILDE, RETROK_BACKQUOTE, "`/~" },
+	{ ITEM_ID_MINUS, RETROK_MINUS, "-/_" },
+	{ ITEM_ID_EQUALS, RETROK_EQUALS, "=/+" },
+	{ ITEM_ID_BACKSPACE, RETROK_BACKSPACE, "Backspace" },
+	{ ITEM_ID_TAB, RETROK_TAB, "Tab" },
+	{ ITEM_ID_OPENBRACE, RETROK_LEFTBRACKET, "[/{" },
+	{ ITEM_ID_CLOSEBRACE, RETROK_RIGHTBRACKET, "]/}" },
+	{ ITEM_ID_ENTER, RETROK_RETURN, "Enter" },
+	{ ITEM_ID_COLON, RETROK_SEMICOLON, ";/:" },
+	{ ITEM_ID_QUOTE, RETROK_QUOTE, "'\"" },
+	{ ITEM_ID_BACKSLASH, RETROK_BACKSLASH, "\\/|" },
+	{ ITEM_ID_BACKSLASH2, RETROK_OEM_102, "Backslash2" },
+	{ ITEM_ID_COMMA, RETROK_COMMA, ",/<" },
+	{ ITEM_ID_STOP, RETROK_PERIOD, "./>" },
+	{ ITEM_ID_SLASH, RETROK_SLASH, "?/" },
+	{ ITEM_ID_SPACE, RETROK_SPACE, "Space" },
+	{ ITEM_ID_INSERT, RETROK_INSERT, "Insert" },
+	{ ITEM_ID_DEL, RETROK_DELETE, "Delete" },
+	{ ITEM_ID_HOME, RETROK_HOME, "Home" },
+	{ ITEM_ID_END, RETROK_END, "End" },
+	{ ITEM_ID_PGUP, RETROK_PAGEUP, "Page Up" },
+	{ ITEM_ID_PGDN, RETROK_PAGEDOWN, "Page Down" },
+	{ ITEM_ID_LEFT, RETROK_LEFT, "Left" },
+	{ ITEM_ID_RIGHT, RETROK_RIGHT, "Right" },
+	{ ITEM_ID_UP, RETROK_UP, "Up" },
+	{ ITEM_ID_DOWN, RETROK_DOWN, "Down" },
+	{ ITEM_ID_0_PAD, RETROK_KP0, "Keypad 0" },
+	{ ITEM_ID_1_PAD, RETROK_KP1, "Keypad 1" },
+	{ ITEM_ID_2_PAD, RETROK_KP2, "Keypad 2" },
+	{ ITEM_ID_3_PAD, RETROK_KP3, "Keypad 3" },
+	{ ITEM_ID_4_PAD, RETROK_KP4, "Keypad 4" },
+	{ ITEM_ID_5_PAD, RETROK_KP5, "Keypad 5" },
+	{ ITEM_ID_6_PAD, RETROK_KP6, "Keypad 6" },
+	{ ITEM_ID_7_PAD, RETROK_KP7, "Keypad 7" },
+	{ ITEM_ID_8_PAD, RETROK_KP8, "Keypad 8" },
+	{ ITEM_ID_9_PAD, RETROK_KP9, "Keypad 9" },
+	{ ITEM_ID_SLASH_PAD, RETROK_KP_DIVIDE, "Keypad /" },
+	{ ITEM_ID_ASTERISK, RETROK_KP_MULTIPLY, "Keypad *" },
+	{ ITEM_ID_MINUS_PAD, RETROK_KP_MINUS, "Keypad -" },
+	{ ITEM_ID_PLUS_PAD, RETROK_KP_PLUS, "Keypad +" },
+	{ ITEM_ID_DEL_PAD, RETROK_KP_PERIOD, "Keypad ." },
+	{ ITEM_ID_ENTER_PAD, RETROK_KP_ENTER, "Keypad Enter" },
+	{ ITEM_ID_BS_PAD, RETROK_BACKSPACE, "Keypad Backspace" },
+	{ ITEM_ID_TAB_PAD, RETROK_TAB, "Keypad Tab" },
+	{ ITEM_ID_00_PAD, RETROK_0, "Keypad 00" },
+	{ ITEM_ID_000_PAD, RETROK_0, "Keypad 000" },
+	{ ITEM_ID_COMMA_PAD, RETROK_COMMA, "Keypad ," },
+	{ ITEM_ID_EQUALS_PAD, RETROK_KP_EQUALS, "Keypad =" },
+	{ ITEM_ID_PRTSCR, RETROK_PRINT, "Print Screen" },
+	{ ITEM_ID_PAUSE, RETROK_PAUSE, "Pause" },
+	{ ITEM_ID_LSHIFT, RETROK_LSHIFT, "Left Shift" },
+	{ ITEM_ID_RSHIFT, RETROK_RSHIFT, "Right Shift" },
+	{ ITEM_ID_LCONTROL, RETROK_LCTRL, "Left Ctrl" },
+	{ ITEM_ID_RCONTROL, RETROK_RCTRL, "Right Ctrl" },
+	{ ITEM_ID_LALT, RETROK_LALT, "Left Alt" },
+	{ ITEM_ID_RALT, RETROK_RALT, "Right Alt" },
+	{ ITEM_ID_SCRLOCK, RETROK_SCROLLOCK, "Scroll Lock" },
+	{ ITEM_ID_NUMLOCK, RETROK_NUMLOCK, "Num Lock" },
+	{ ITEM_ID_CAPSLOCK, RETROK_CAPSLOCK, "Caps Lock" },
+	{ ITEM_ID_LWIN, RETROK_LMETA, "Left Win" },
+	{ ITEM_ID_RWIN, RETROK_RMETA, "Right Win" },
+	{ ITEM_ID_MENU, RETROK_MENU, "Menu" },
+	{ ITEM_ID_CANCEL, RETROK_BREAK, "Cancel" }
+}};
+
+constexpr std::array<pad_item_mapping, 14> k_pad_items = {{
+	{ ITEM_ID_XAXIS, pad_item_kind::axis_x, "X Axis" },
+	{ ITEM_ID_YAXIS, pad_item_kind::axis_y, "Y Axis" },
+	{ ITEM_ID_UP, pad_item_kind::up, "Up" },
+	{ ITEM_ID_DOWN, pad_item_kind::down, "Down" },
+	{ ITEM_ID_LEFT, pad_item_kind::left, "Left" },
+	{ ITEM_ID_RIGHT, pad_item_kind::right, "Right" },
+	{ ITEM_ID_BUTTON1, pad_item_kind::button1, "A" },
+	{ ITEM_ID_BUTTON2, pad_item_kind::button2, "B" },
+	{ ITEM_ID_BUTTON3, pad_item_kind::button3, "X/C" },
+	{ ITEM_ID_BUTTON4, pad_item_kind::button4, "Y/X" },
+	{ ITEM_ID_BUTTON5, pad_item_kind::button5, "L/Y" },
+	{ ITEM_ID_BUTTON6, pad_item_kind::button6, "R/Z" },
+	{ ITEM_ID_START, pad_item_kind::start, "Start" },
+	{ ITEM_ID_SELECT, pad_item_kind::select, "Select" }
+}};
+
+constexpr s32 k_axis_min = osd::input_device::ABSOLUTE_MIN;
+constexpr s32 k_axis_max = osd::input_device::ABSOLUTE_MAX;
+
+s32 keyboard_item_state(void *, void *item_internal)
+{
+	const auto *mapping = static_cast<const keyboard_item_mapping *>(item_internal);
+	return mapping && fmtowns::libretro_osd::keyboard_pressed(mapping->key) ? 1 : 0;
+}
+
+s32 pad_item_state(void *device_internal, void *item_internal)
+{
+	const auto *device = static_cast<const pad_device_state *>(device_internal);
+	const auto *mapping = static_cast<const pad_item_mapping *>(item_internal);
+	if (!device || !mapping)
+		return 0;
+
+	auto pressed = [port = device->port](unsigned id) { return fmtowns::libretro_osd::joypad_pressed(port, id); };
+
+	switch (mapping->kind)
+	{
+	case pad_item_kind::axis_x:
+		if (pressed(RETRO_DEVICE_ID_JOYPAD_LEFT) == pressed(RETRO_DEVICE_ID_JOYPAD_RIGHT))
+			return 0;
+		return pressed(RETRO_DEVICE_ID_JOYPAD_LEFT) ? k_axis_min : k_axis_max;
+
+	case pad_item_kind::axis_y:
+		if (pressed(RETRO_DEVICE_ID_JOYPAD_UP) == pressed(RETRO_DEVICE_ID_JOYPAD_DOWN))
+			return 0;
+		return pressed(RETRO_DEVICE_ID_JOYPAD_UP) ? k_axis_min : k_axis_max;
+
+	case pad_item_kind::up:
+		return pressed(RETRO_DEVICE_ID_JOYPAD_UP) ? 1 : 0;
+	case pad_item_kind::down:
+		return pressed(RETRO_DEVICE_ID_JOYPAD_DOWN) ? 1 : 0;
+	case pad_item_kind::left:
+		return pressed(RETRO_DEVICE_ID_JOYPAD_LEFT) ? 1 : 0;
+	case pad_item_kind::right:
+		return pressed(RETRO_DEVICE_ID_JOYPAD_RIGHT) ? 1 : 0;
+	case pad_item_kind::button1:
+		return pressed(RETRO_DEVICE_ID_JOYPAD_A) ? 1 : 0;
+	case pad_item_kind::button2:
+		return pressed(RETRO_DEVICE_ID_JOYPAD_B) ? 1 : 0;
+	case pad_item_kind::button3:
+		return pressed(RETRO_DEVICE_ID_JOYPAD_X) ? 1 : 0;
+	case pad_item_kind::button4:
+		return pressed(RETRO_DEVICE_ID_JOYPAD_Y) ? 1 : 0;
+	case pad_item_kind::button5:
+		return pressed(RETRO_DEVICE_ID_JOYPAD_L) ? 1 : 0;
+	case pad_item_kind::button6:
+		return pressed(RETRO_DEVICE_ID_JOYPAD_R) ? 1 : 0;
+	case pad_item_kind::start:
+		return pressed(RETRO_DEVICE_ID_JOYPAD_START) ? 1 : 0;
+	case pad_item_kind::select:
+		return pressed(RETRO_DEVICE_ID_JOYPAD_SELECT) ? 1 : 0;
+	}
+
+	return 0;
+}
+
+void register_libretro_input_devices(running_machine &machine)
+{
+	auto &input = machine.input();
+	static pad_device_state pad_state[2] = {{ 0 }, { 1 }};
+
+	auto &keyboard = input.add_device(DEVICE_CLASS_KEYBOARD, "Libretro Keyboard", "libretro_keyboard", nullptr);
+	for (const auto &mapping : k_keyboard_items)
+		keyboard.add_item(mapping.name, mapping.name, mapping.item_id, keyboard_item_state, const_cast<keyboard_item_mapping *>(&mapping));
+
+	auto &pad1 = input.add_device(DEVICE_CLASS_JOYSTICK, "Libretro Pad 1", "libretro_pad1", &pad_state[0]);
+	auto &pad2 = input.add_device(DEVICE_CLASS_JOYSTICK, "Libretro Pad 2", "libretro_pad2", &pad_state[1]);
+	for (const auto &mapping : k_pad_items)
+	{
+		pad1.add_item(mapping.name, mapping.name, mapping.item_id, pad_item_state, const_cast<pad_item_mapping *>(&mapping));
+		pad2.add_item(mapping.name, mapping.name, mapping.item_id, pad_item_state, const_cast<pad_item_mapping *>(&mapping));
+	}
+}
 
 class headless_font : public osd_font
 {
@@ -45,7 +426,7 @@ public:
 class headless_osd_interface : public osd_interface
 {
 public:
-	void init(running_machine &) override { }
+	void init(running_machine &machine) override { register_libretro_input_devices(machine); }
 	void update(bool) override { }
 	void input_update(bool) override { }
 	void check_osd_inputs() override { }

@@ -33,6 +33,8 @@ std::string g_system_directory;
 std::string g_bios_directory;
 std::string g_model = "fmtownsux";
 std::string g_content_path;
+std::string g_pad1_device = "townspad";
+std::string g_pad2_device = "none";
 std::array<uint32_t, k_width * k_height> g_framebuffer = {};
 
 constexpr const char *k_screen_trace_path = "C:\\sw\\fmtowns-master\\build\\libretro64\\fmtowns_screen_update.log";
@@ -207,8 +209,8 @@ void stop_watchdog()
 
 const retro_variable k_variables[] = {
 	{ "fmtowns_model", "FM Towns model; fmtownsux|fmtmarty|fmtownssj|fmtowns|fmtownsv03|fmtownshr|fmtownsmx|fmtownsftv|fmtmarty2|carmarty" },
-	{ "fmtowns_pad1", "Port 1 device; gamepad|none" },
-	{ "fmtowns_pad2", "Port 2 device; none|gamepad" },
+	{ "fmtowns_pad1", "Port 1 device; townspad|towns6b|martypad|none" },
+	{ "fmtowns_pad2", "Port 2 device; none|townspad|towns6b|martypad" },
 	{ "fmtowns_mouse", "Mouse; enabled|disabled" },
 	{ nullptr, nullptr }
 };
@@ -274,6 +276,8 @@ public:
 		boot.content_path = m_content;
 		boot.cfg_directory = cfg_directory;
 		boot.nvram_directory = nvram_directory;
+		boot.pad1_device = g_pad1_device;
+		boot.pad2_device = g_pad2_device;
 
 		std::string error;
 		if (!m_mame->start(boot, error))
@@ -575,11 +579,12 @@ void set_core_options()
 void refresh_core_options()
 {
 	g_model = fmtowns::libretro_osd::variable_value("fmtowns_model", "fmtownsux");
-	const std::string pad1 = fmtowns::libretro_osd::variable_value("fmtowns_pad1", "gamepad");
-	const std::string pad2 = fmtowns::libretro_osd::variable_value("fmtowns_pad2", "none");
+	const bool is_marty = g_model == "fmtmarty" || g_model == "fmtmarty2" || g_model == "carmarty";
+	g_pad1_device = fmtowns::libretro_osd::variable_value("fmtowns_pad1", is_marty ? "martypad" : "townspad");
+	g_pad2_device = fmtowns::libretro_osd::variable_value("fmtowns_pad2", "none");
 	const std::string mouse = fmtowns::libretro_osd::variable_value("fmtowns_mouse", "enabled");
 	fmtowns::libretro_osd::log(RETRO_LOG_INFO, "Input profile: pad1=%s, pad2=%s, mouse=%s.\n",
-			pad1.c_str(), pad2.c_str(), mouse.c_str());
+			g_pad1_device.c_str(), g_pad2_device.c_str(), mouse.c_str());
 }
 
 bool validate_default_bios()

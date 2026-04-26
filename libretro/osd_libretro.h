@@ -20,6 +20,7 @@ void set_input_state(retro_input_state_t cb);
 void configure_environment(const retro_variable *variables);
 void poll_input();
 bool joypad_pressed(unsigned port, unsigned id);
+bool keyboard_pressed(unsigned key);
 
 std::string system_directory();
 std::string variable_value(const char *key, const char *fallback);
