@@ -402,16 +402,16 @@ public:
 	void set_joystick_input(unsigned player, bool up, bool down, bool left, bool right, bool button1, bool button2, bool start, bool select)
 	{
 		// Log a archivo separado
-		static int call_count = 0;
-		if (call_count < 5) {
-			FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
-			if (f) {
-				fprintf(f, "[DEBUG] set_joystick_input called: player=%d, m_mame=%p, running=%d\n",
-					player, (void*)m_mame.get(), (m_mame && m_mame->running()) ? 1 : 0);
-				fclose(f);
-			}
-			call_count++;
-		}
+		// static int call_count = 0;
+		// if (call_count < 5) {
+		// 	FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
+		// 	if (f) {
+		// 		fprintf(f, "[DEBUG] set_joystick_input called: player=%d, m_mame=%p, running=%d\n",
+		// 			player, (void*)m_mame.get(), (m_mame && m_mame->running()) ? 1 : 0);
+		// 		fclose(f);
+		// 	}
+		// 	call_count++;
+		// }
 		
 		if (m_mame && m_mame->running())
 		{
@@ -782,16 +782,16 @@ RETRO_API_EXPORT void retro_run(void)
 	const bool runtime_loaded = g_runtime_loaded.load();
 
 	// Log de debug a archivo separado (RetroArch suprime logs durante gameplay)
-	static int debug_count = 0;
-	if (debug_count < 3) {
-		FILE* f = fopen("D:\\fmtowns_input_debug.txt", debug_count == 0 ? "w" : "a");
-		if (f) {
-			fprintf(f, "[DEBUG retro_run] runtime_loaded=%d, frame=%llu\n", 
-				runtime_loaded ? 1 : 0, (unsigned long long)g_runtime.frame_count());
-			fclose(f);
-		}
-		debug_count++;
-	}
+	// static int debug_count = 0;
+	// if (debug_count < 3) {
+	// 	FILE* f = fopen("D:\\fmtowns_input_debug.txt", debug_count == 0 ? "w" : "a");
+	// 	if (f) {
+	// 		fprintf(f, "[DEBUG retro_run] runtime_loaded=%d, frame=%llu\n", 
+	// 			runtime_loaded ? 1 : 0, (unsigned long long)g_runtime.frame_count());
+	// 		fclose(f);
+	// 	}
+	// 	debug_count++;
+	// }
 
 	if (runtime_loaded && !g_runtime.has_issued_run_canary())
 	{
@@ -833,16 +833,16 @@ RETRO_API_EXPORT void retro_run(void)
 			const bool final_right = right || analog_right;
 			
 			// Log de debug a archivo separado
-			static bool logged_input[2] = {false, false};
-			if (!logged_input[player] && (final_up || final_down || final_left || final_right || button1 || button2)) {
-				FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
-				if (f) {
-					fprintf(f, "[DEBUG INPUT] P%d: up=%d down=%d left=%d right=%d btn1=%d btn2=%d analog_x=%d analog_y=%d\n",
-						player, final_up, final_down, final_left, final_right, button1, button2, analog_x, analog_y);
-					fclose(f);
-				}
-				logged_input[player] = true;
-			}
+			// static bool logged_input[2] = {false, false};
+			// if (!logged_input[player] && (final_up || final_down || final_left || final_right || button1 || button2)) {
+			// 	FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
+			// 	if (f) {
+			// 		fprintf(f, "[DEBUG INPUT] P%d: up=%d down=%d left=%d right=%d btn1=%d btn2=%d analog_x=%d analog_y=%d\n",
+			// 			player, final_up, final_down, final_left, final_right, button1, button2, analog_x, analog_y);
+			// 		fclose(f);
+			// 	}
+			// 	logged_input[player] = true;
+			// }
 			
 			// Enviar el input a MAME siempre (no solo cuando hay direcciones)
 			// Esto asegura que los botones también se envíen correctamente

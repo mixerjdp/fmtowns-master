@@ -955,32 +955,32 @@ public:
 		// Similar a cómo XM6 usa xm6_input_joy() para forzar el estado del joystick directamente en la VM
 		
 		// Log a archivo separado
-		static int log_count = 0;
-		if (log_count < 10) {
-			FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
-			if (f) {
-				fprintf(f, "[DIRECT_INPUT] P%d: up=%d down=%d left=%d right=%d btn1=%d btn2=%d start=%d select=%d\n",
-					player + 1, up, down, left, right, button1, button2, start, select);
-				fclose(f);
-			}
-			log_count++;
-		}
+		// static int log_count = 0;
+		// if (log_count < 10) {
+		// 	FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
+		// 	if (f) {
+		// 		fprintf(f, "[DIRECT_INPUT] P%d: up=%d down=%d left=%d right=%d btn1=%d btn2=%d start=%d select=%d\n",
+		// 			player + 1, up, down, left, right, button1, button2, start, select);
+		// 		fclose(f);
+		// 	}
+		// 	log_count++;
+		// }
 
 		// Listar TODOS los puertos disponibles (solo la primera vez)
-		static bool listed_all_ports = false;
-		if (!listed_all_ports) {
-			FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
-			if (f) {
-				fprintf(f, "[DIRECT_INPUT] === LISTANDO TODOS LOS PUERTOS DISPONIBLES ===\n");
-				for (auto &port_pair : m_machine->ioport().ports())
-				{
-					fprintf(f, "[DIRECT_INPUT] Puerto disponible: '%s'\n", port_pair.first.c_str());
-				}
-				fprintf(f, "[DIRECT_INPUT] === FIN DE LISTA DE PUERTOS ===\n");
-				fclose(f);
-			}
-			listed_all_ports = true;
-		}
+		// static bool listed_all_ports = false;
+		// if (!listed_all_ports) {
+		// 	FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
+		// 	if (f) {
+		// 		fprintf(f, "[DIRECT_INPUT] === LISTANDO TODOS LOS PUERTOS DISPONIBLES ===\n");
+		// 		for (auto &port_pair : m_machine->ioport().ports())
+		// 		{
+		// 			fprintf(f, "[DIRECT_INPUT] Puerto disponible: '%s'\n", port_pair.first.c_str());
+		// 		}
+		// 		fprintf(f, "[DIRECT_INPUT] === FIN DE LISTA DE PUERTOS ===\n");
+		// 		fclose(f);
+		// 	}
+		// 	listed_all_ports = true;
+		// }
 
 		// Buscar el puerto del townspad para este jugador iterando por todos los puertos
 		// Los puertos reales son ":pad1:townspad:PAD" y ":pad2:townspad:PAD"
@@ -994,15 +994,15 @@ public:
 			{
 				target_port = port_pair.second.get();
 				// Log solo la primera vez
-				static bool logged_port[2] = {false, false};
-				if (!logged_port[player]) {
-					FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
-					if (f) {
-						fprintf(f, "[DIRECT_INPUT] Encontrado puerto: %s\n", tag.c_str());
-						fclose(f);
-					}
-					logged_port[player] = true;
-				}
+				// static bool logged_port[2] = {false, false};
+				// if (!logged_port[player]) {
+				// 	FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
+				// 	if (f) {
+				// 		fprintf(f, "[DIRECT_INPUT] Encontrado puerto: %s\n", tag.c_str());
+				// 		fclose(f);
+				// 	}
+				// 	logged_port[player] = true;
+				// }
 				break;
 			}
 		}
@@ -1010,16 +1010,16 @@ public:
 		if (!target_port)
 		{
 			// Log solo la primera vez para no saturar el log
-			static bool logged_error[2] = {false, false};
-			if (!logged_error[player])
-			{
-				FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
-				if (f) {
-					fprintf(f, "[DIRECT_INPUT] No se pudo encontrar el puerto del townspad para P%d\n", player + 1);
-					fclose(f);
-				}
-				logged_error[player] = true;
-			}
+			// static bool logged_error[2] = {false, false};
+			// if (!logged_error[player])
+			// {
+			// 	FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
+			// 	if (f) {
+			// 		fprintf(f, "[DIRECT_INPUT] No se pudo encontrar el puerto del townspad para P%d\n", player + 1);
+			// 		fclose(f);
+			// 	}
+			// 	logged_error[player] = true;
+			// }
 			return;
 		}
 
