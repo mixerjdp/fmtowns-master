@@ -68,6 +68,12 @@ void set_input_state(retro_input_state_t cb)
 	g_input_state = cb;
 }
 
+void set_input_descriptors(const struct retro_input_descriptor *desc)
+{
+	if (g_environment && desc)
+		g_environment(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, const_cast<struct retro_input_descriptor *>(desc));
+}
+
 void configure_environment(const retro_variable *variables)
 {
 	if (!g_environment)
@@ -91,6 +97,11 @@ void poll_input()
 bool joypad_pressed(unsigned port, unsigned id)
 {
 	return g_input_state && g_input_state(port, RETRO_DEVICE_JOYPAD, 0, id);
+}
+
+int16_t joypad_analog(unsigned port, unsigned index, unsigned id)
+{
+	return g_input_state ? g_input_state(port, RETRO_DEVICE_ANALOG, index, id) : 0;
 }
 
 bool keyboard_pressed(unsigned key)

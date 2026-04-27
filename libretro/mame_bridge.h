@@ -45,6 +45,7 @@ public:
 	void stop();
 	bool running() const;
 	bool copy_video_frame(uint32_t *pixels, unsigned max_width, unsigned max_height, unsigned &width, unsigned &height);
+	void set_joystick_input(unsigned player, bool up, bool down, bool left, bool right, bool button1, bool button2, bool start, bool select);
 
 private:
 	class impl;

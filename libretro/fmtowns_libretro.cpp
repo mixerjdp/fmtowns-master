@@ -399,6 +399,26 @@ public:
 		m_run_canary_issued = true;
 	}
 
+	void set_joystick_input(unsigned player, bool up, bool down, bool left, bool right, bool button1, bool button2, bool start, bool select)
+	{
+		// Log a archivo separado
+		static int call_count = 0;
+		if (call_count < 5) {
+			FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
+			if (f) {
+				fprintf(f, "[DEBUG] set_joystick_input called: player=%d, m_mame=%p, running=%d\n",
+					player, (void*)m_mame.get(), (m_mame && m_mame->running()) ? 1 : 0);
+				fclose(f);
+			}
+			call_count++;
+		}
+		
+		if (m_mame && m_mame->running())
+		{
+			m_mame->set_joystick_input(player, up, down, left, right, button1, button2, start, select);
+		}
+	}
+
 private:
 	void update_execution_snapshot()
 	{
@@ -685,13 +705,35 @@ RETRO_API_EXPORT void retro_get_system_av_info(retro_system_av_info *info)
 
 RETRO_API_EXPORT void retro_init(void)
 {
+	static const struct retro_input_descriptor desc[] = {
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "D-Pad Left" },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "D-Pad Right" },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "D-Pad Up" },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "D-Pad Down" },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,     "Button A" },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,     "Button B" },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Start (Run)" },
+		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select" },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "D-Pad Left" },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "D-Pad Right" },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "D-Pad Up" },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "D-Pad Down" },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,     "Button A" },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,     "Button B" },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Start (Run)" },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select" },
+		{ 0, 0, 0, 0, nullptr }
+	};
+
 	refresh_environment_paths();
 	set_core_options();
+	// fmtowns::libretro_osd::set_input_descriptors(desc);
 	clear_trace_log();
 	start_watchdog();
 	fmtowns::screen_capture::set_callback(fmtowns::libretro_osd::capture_xrgb8888);
 	append_canary_line("retro_init\n");
 	fmtowns::libretro_osd::log(RETRO_LOG_INFO, "fmtowns_libretro Phase 3 initialized; libretro OSD adapters are active.\n");
+	fmtowns::libretro_osd::log(RETRO_LOG_INFO, "***** CORE VERSION: DIRECT INPUT FIX v2 - BUILD TIME: %s %s *****\n", __DATE__, __TIME__);
 }
 
 RETRO_API_EXPORT void retro_deinit(void)
@@ -739,6 +781,18 @@ RETRO_API_EXPORT void retro_run(void)
 	fmtowns::libretro_osd::poll_input();
 	const bool runtime_loaded = g_runtime_loaded.load();
 
+	// Log de debug a archivo separado (RetroArch suprime logs durante gameplay)
+	static int debug_count = 0;
+	if (debug_count < 3) {
+		FILE* f = fopen("D:\\fmtowns_input_debug.txt", debug_count == 0 ? "w" : "a");
+		if (f) {
+			fprintf(f, "[DEBUG retro_run] runtime_loaded=%d, frame=%llu\n", 
+				runtime_loaded ? 1 : 0, (unsigned long long)g_runtime.frame_count());
+			fclose(f);
+		}
+		debug_count++;
+	}
+
 	if (runtime_loaded && !g_runtime.has_issued_run_canary())
 	{
 		append_canary_line("retro_run\n");
@@ -748,6 +802,52 @@ RETRO_API_EXPORT void retro_run(void)
 	if (runtime_loaded)
 	{
 		g_last_run_frame.store(g_runtime.frame_count());
+		
+		// Leer input del joystick directamente y enviarlo a MAME
+		// Esto es necesario porque MAME no está llamando a pad_item_state para las direcciones
+		for (unsigned player = 0; player < 2; ++player)
+		{
+			const bool up = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_UP);
+			const bool down = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_DOWN);
+			const bool left = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_LEFT);
+			const bool right = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_RIGHT);
+			const bool button1 = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_A);
+			const bool button2 = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_B);
+			const bool start = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_START);
+			const bool select = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_SELECT);
+			
+			// También leer analog stick
+			const int16_t analog_x = fmtowns::libretro_osd::joypad_analog(player, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
+			const int16_t analog_y = fmtowns::libretro_osd::joypad_analog(player, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y);
+			constexpr int16_t threshold = 16384;
+			
+			const bool analog_up = analog_y < -threshold;
+			const bool analog_down = analog_y > threshold;
+			const bool analog_left = analog_x < -threshold;
+			const bool analog_right = analog_x > threshold;
+			
+			// Combinar D-pad y analog stick
+			const bool final_up = up || analog_up;
+			const bool final_down = down || analog_down;
+			const bool final_left = left || analog_left;
+			const bool final_right = right || analog_right;
+			
+			// Log de debug a archivo separado
+			static bool logged_input[2] = {false, false};
+			if (!logged_input[player] && (final_up || final_down || final_left || final_right || button1 || button2)) {
+				FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
+				if (f) {
+					fprintf(f, "[DEBUG INPUT] P%d: up=%d down=%d left=%d right=%d btn1=%d btn2=%d analog_x=%d analog_y=%d\n",
+						player, final_up, final_down, final_left, final_right, button1, button2, analog_x, analog_y);
+					fclose(f);
+				}
+				logged_input[player] = true;
+			}
+			
+			// Enviar el input a MAME siempre (no solo cuando hay direcciones)
+			// Esto asegura que los botones también se envíen correctamente
+			g_runtime.set_joystick_input(player, final_up, final_down, final_left, final_right, button1, button2, start, select);
+		}
 	}
 
 	if (runtime_loaded)

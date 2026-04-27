@@ -25,6 +25,8 @@
 #include <vector>
 
 #include "inputdev.h"
+#include "inpttype.h"
+#include "interface/inputcode.h"
 
 namespace fmtowns::screen_capture {
 } // namespace fmtowns::screen_capture
@@ -141,26 +143,6 @@ enum retro_key : unsigned
 	RETROK_PRINT = 316,
 	RETROK_BREAK = 318,
 	RETROK_OEM_102 = 323,
-};
-
-enum retro_joypad_id : unsigned
-{
-	RETRO_DEVICE_ID_JOYPAD_B = 0,
-	RETRO_DEVICE_ID_JOYPAD_Y = 1,
-	RETRO_DEVICE_ID_JOYPAD_SELECT = 2,
-	RETRO_DEVICE_ID_JOYPAD_START = 3,
-	RETRO_DEVICE_ID_JOYPAD_UP = 4,
-	RETRO_DEVICE_ID_JOYPAD_DOWN = 5,
-	RETRO_DEVICE_ID_JOYPAD_LEFT = 6,
-	RETRO_DEVICE_ID_JOYPAD_RIGHT = 7,
-	RETRO_DEVICE_ID_JOYPAD_A = 8,
-	RETRO_DEVICE_ID_JOYPAD_X = 9,
-	RETRO_DEVICE_ID_JOYPAD_L = 10,
-	RETRO_DEVICE_ID_JOYPAD_R = 11,
-	RETRO_DEVICE_ID_JOYPAD_L2 = 12,
-	RETRO_DEVICE_ID_JOYPAD_R2 = 13,
-	RETRO_DEVICE_ID_JOYPAD_L3 = 14,
-	RETRO_DEVICE_ID_JOYPAD_R3 = 15,
 };
 
 struct keyboard_item_mapping
@@ -318,10 +300,10 @@ constexpr std::array<keyboard_item_mapping, 112> k_keyboard_items = {{
 constexpr std::array<pad_item_mapping, 14> k_pad_items = {{
 	{ ITEM_ID_XAXIS, pad_item_kind::axis_x, "X Axis" },
 	{ ITEM_ID_YAXIS, pad_item_kind::axis_y, "Y Axis" },
-	{ ITEM_ID_UP, pad_item_kind::up, "Up" },
-	{ ITEM_ID_DOWN, pad_item_kind::down, "Down" },
-	{ ITEM_ID_LEFT, pad_item_kind::left, "Left" },
-	{ ITEM_ID_RIGHT, pad_item_kind::right, "Right" },
+	{ ITEM_ID_HAT1UP, pad_item_kind::up, "Up" },
+	{ ITEM_ID_HAT1DOWN, pad_item_kind::down, "Down" },
+	{ ITEM_ID_HAT1LEFT, pad_item_kind::left, "Left" },
+	{ ITEM_ID_HAT1RIGHT, pad_item_kind::right, "Right" },
 	{ ITEM_ID_BUTTON1, pad_item_kind::button1, "A" },
 	{ ITEM_ID_BUTTON2, pad_item_kind::button2, "B" },
 	{ ITEM_ID_BUTTON3, pad_item_kind::button3, "X/C" },
@@ -348,47 +330,90 @@ s32 pad_item_state(void *device_internal, void *item_internal)
 	if (!device || !mapping)
 		return 0;
 
-	auto pressed = [port = device->port](unsigned id) { return fmtowns::libretro_osd::joypad_pressed(port, id); };
+	auto pressed = [port = device->port](unsigned id) { 
+		bool result = fmtowns::libretro_osd::joypad_pressed(port, id);
+		return result;
+	};
+	auto analog = [port = device->port](unsigned id) { return fmtowns::libretro_osd::joypad_analog(port, RETRO_DEVICE_INDEX_ANALOG_LEFT, id); };
+
+	s32 result = 0;
+	constexpr int16_t k_analog_threshold = 16384;
 
 	switch (mapping->kind)
 	{
 	case pad_item_kind::axis_x:
-		if (pressed(RETRO_DEVICE_ID_JOYPAD_LEFT) == pressed(RETRO_DEVICE_ID_JOYPAD_RIGHT))
-			return 0;
-		return pressed(RETRO_DEVICE_ID_JOYPAD_LEFT) ? k_axis_min : k_axis_max;
-
+	{
+		int16_t a = analog(RETRO_DEVICE_ID_ANALOG_X);
+		if (std::abs(a) > 8000)
+			result = a;
+		else if (pressed(RETRO_DEVICE_ID_JOYPAD_LEFT) != pressed(RETRO_DEVICE_ID_JOYPAD_RIGHT))
+			result = pressed(RETRO_DEVICE_ID_JOYPAD_LEFT) ? k_axis_min : k_axis_max;
+		break;
+	}
 	case pad_item_kind::axis_y:
-		if (pressed(RETRO_DEVICE_ID_JOYPAD_UP) == pressed(RETRO_DEVICE_ID_JOYPAD_DOWN))
-			return 0;
-		return pressed(RETRO_DEVICE_ID_JOYPAD_UP) ? k_axis_min : k_axis_max;
-
+	{
+		int16_t a = analog(RETRO_DEVICE_ID_ANALOG_Y);
+		if (std::abs(a) > 8000)
+			result = a;
+		else if (pressed(RETRO_DEVICE_ID_JOYPAD_UP) != pressed(RETRO_DEVICE_ID_JOYPAD_DOWN))
+			result = pressed(RETRO_DEVICE_ID_JOYPAD_UP) ? k_axis_min : k_axis_max;
+		break;
+	}
 	case pad_item_kind::up:
-		return pressed(RETRO_DEVICE_ID_JOYPAD_UP) ? 1 : 0;
+	{
+		bool dpad = pressed(RETRO_DEVICE_ID_JOYPAD_UP);
+		int16_t analog_y = analog(RETRO_DEVICE_ID_ANALOG_Y);
+		bool analog_up = analog_y < -k_analog_threshold;
+		result = (dpad || analog_up) ? 1 : 0;
+		
+		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[INPUT] P%d UP: dpad=%d analog_y=%d result=%d\n", 
+			device->port + 1, dpad, analog_y, result);
+		break;
+	}
 	case pad_item_kind::down:
-		return pressed(RETRO_DEVICE_ID_JOYPAD_DOWN) ? 1 : 0;
+	{
+		bool dpad = pressed(RETRO_DEVICE_ID_JOYPAD_DOWN);
+		int16_t analog_y = analog(RETRO_DEVICE_ID_ANALOG_Y);
+		bool analog_down = analog_y > k_analog_threshold;
+		result = (dpad || analog_down) ? 1 : 0;
+		
+		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[INPUT] P%d DOWN: dpad=%d analog_y=%d result=%d\n", 
+			device->port + 1, dpad, analog_y, result);
+		break;
+	}
 	case pad_item_kind::left:
-		return pressed(RETRO_DEVICE_ID_JOYPAD_LEFT) ? 1 : 0;
+	{
+		bool dpad = pressed(RETRO_DEVICE_ID_JOYPAD_LEFT);
+		int16_t analog_x = analog(RETRO_DEVICE_ID_ANALOG_X);
+		bool analog_left = analog_x < -k_analog_threshold;
+		result = (dpad || analog_left) ? 1 : 0;
+		
+		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[INPUT] P%d LEFT: dpad=%d analog_x=%d result=%d\n", 
+			device->port + 1, dpad, analog_x, result);
+		break;
+	}
 	case pad_item_kind::right:
-		return pressed(RETRO_DEVICE_ID_JOYPAD_RIGHT) ? 1 : 0;
-	case pad_item_kind::button1:
-		return pressed(RETRO_DEVICE_ID_JOYPAD_A) ? 1 : 0;
-	case pad_item_kind::button2:
-		return pressed(RETRO_DEVICE_ID_JOYPAD_B) ? 1 : 0;
-	case pad_item_kind::button3:
-		return pressed(RETRO_DEVICE_ID_JOYPAD_X) ? 1 : 0;
-	case pad_item_kind::button4:
-		return pressed(RETRO_DEVICE_ID_JOYPAD_Y) ? 1 : 0;
-	case pad_item_kind::button5:
-		return pressed(RETRO_DEVICE_ID_JOYPAD_L) ? 1 : 0;
-	case pad_item_kind::button6:
-		return pressed(RETRO_DEVICE_ID_JOYPAD_R) ? 1 : 0;
-	case pad_item_kind::start:
-		return pressed(RETRO_DEVICE_ID_JOYPAD_START) ? 1 : 0;
-	case pad_item_kind::select:
-		return pressed(RETRO_DEVICE_ID_JOYPAD_SELECT) ? 1 : 0;
+	{
+		bool dpad = pressed(RETRO_DEVICE_ID_JOYPAD_RIGHT);
+		int16_t analog_x = analog(RETRO_DEVICE_ID_ANALOG_X);
+		bool analog_right = analog_x > k_analog_threshold;
+		result = (dpad || analog_right) ? 1 : 0;
+		
+		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[INPUT] P%d RIGHT: dpad=%d analog_x=%d result=%d\n", 
+			device->port + 1, dpad, analog_x, result);
+		break;
+	}
+	case pad_item_kind::button1: result = pressed(RETRO_DEVICE_ID_JOYPAD_A) ? 1 : 0; break;
+	case pad_item_kind::button2: result = pressed(RETRO_DEVICE_ID_JOYPAD_B) ? 1 : 0; break;
+	case pad_item_kind::button3: result = pressed(RETRO_DEVICE_ID_JOYPAD_X) ? 1 : 0; break;
+	case pad_item_kind::button4: result = pressed(RETRO_DEVICE_ID_JOYPAD_Y) ? 1 : 0; break;
+	case pad_item_kind::button5: result = pressed(RETRO_DEVICE_ID_JOYPAD_L) ? 1 : 0; break;
+	case pad_item_kind::button6: result = pressed(RETRO_DEVICE_ID_JOYPAD_R) ? 1 : 0; break;
+	case pad_item_kind::start:   result = pressed(RETRO_DEVICE_ID_JOYPAD_START) ? 1 : 0; break;
+	case pad_item_kind::select:  result = pressed(RETRO_DEVICE_ID_JOYPAD_SELECT) ? 1 : 0; break;
 	}
 
-	return 0;
+	return result;
 }
 
 void register_libretro_input_devices(running_machine &machine)
@@ -402,6 +427,16 @@ void register_libretro_input_devices(running_machine &machine)
 
 	auto &pad1 = input.add_device(DEVICE_CLASS_JOYSTICK, "Libretro Pad 1", "libretro_pad1", &pad_state[0]);
 	auto &pad2 = input.add_device(DEVICE_CLASS_JOYSTICK, "Libretro Pad 2", "libretro_pad2", &pad_state[1]);
+	
+	// Cast to input_device to access devindex()
+	auto *pad1_dev = dynamic_cast<input_device *>(&pad1);
+	auto *pad2_dev = dynamic_cast<input_device *>(&pad2);
+	if (pad1_dev && pad2_dev)
+	{
+		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[INPUT] Registered Pad 1 with device index %d\n", pad1_dev->devindex());
+		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[INPUT] Registered Pad 2 with device index %d\n", pad2_dev->devindex());
+	}
+	
 	for (const auto &mapping : k_pad_items)
 	{
 		pad1.add_item(mapping.name, mapping.name, mapping.item_id, pad_item_state, const_cast<pad_item_mapping *>(&mapping));
@@ -472,7 +507,51 @@ public:
 	void sound_begin_update() override { }
 	void sound_end_update() override { }
 
-	void customize_input_type_list(std::vector<input_type_entry> &) override { }
+	void customize_input_type_list(std::vector<input_type_entry> &typelist) override
+	{
+		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[INPUT] Customizing input type list...\n");
+		
+		for (input_type_entry &entry : typelist)
+		{
+			const int player = entry.player();
+			if (player < 0 || player >= 2)
+				continue;
+
+			switch (entry.type())
+			{
+			case IPT_JOYSTICK_UP:
+				entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_Y_NEG_ABSOLUTE_INDEXED(player);
+				entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_HAT1UP_INDEXED(player);
+				fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[INPUT] Player %d JOYSTICK_UP mapped to device index %d\n", player + 1, player);
+				break;
+			case IPT_JOYSTICK_DOWN:
+				entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_Y_POS_ABSOLUTE_INDEXED(player);
+				entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_HAT1DOWN_INDEXED(player);
+				fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[INPUT] Player %d JOYSTICK_DOWN mapped to device index %d\n", player + 1, player);
+				break;
+			case IPT_JOYSTICK_LEFT:
+				entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_X_NEG_ABSOLUTE_INDEXED(player);
+				entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_HAT1LEFT_INDEXED(player);
+				fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[INPUT] Player %d JOYSTICK_LEFT mapped to device index %d\n", player + 1, player);
+				break;
+			case IPT_JOYSTICK_RIGHT:
+				entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_X_POS_ABSOLUTE_INDEXED(player);
+				entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_HAT1RIGHT_INDEXED(player);
+				fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[INPUT] Player %d JOYSTICK_RIGHT mapped to device index %d\n", player + 1, player);
+				break;
+			case IPT_BUTTON1:        entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_BUTTON1_INDEXED(player); break;
+			case IPT_BUTTON2:        entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_BUTTON2_INDEXED(player); break;
+			case IPT_BUTTON3:        entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_BUTTON3_INDEXED(player); break;
+			case IPT_BUTTON4:        entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_BUTTON4_INDEXED(player); break;
+			case IPT_BUTTON5:        entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_BUTTON5_INDEXED(player); break;
+			case IPT_BUTTON6:        entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_BUTTON6_INDEXED(player); break;
+			case IPT_START:          entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_START_INDEXED(player); break;
+			case IPT_SELECT:         entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_SELECT_INDEXED(player); break;
+			default: break;
+			}
+		}
+	}
+
 	void add_audio_to_recording(const int16_t *buffer, int samples_this_frame) override
 	{
 		if (!buffer || samples_this_frame <= 0)
@@ -669,12 +748,26 @@ public:
 		m_options->set_value(OPTION_UI_ACTIVE, false, OPTION_PRIORITY_CMDLINE);
 		m_options->set_value(OPTION_THROTTLE, false, OPTION_PRIORITY_CMDLINE);
 		m_options->set_value(OPTION_SLEEP, false, OPTION_PRIORITY_CMDLINE);
+		m_options->set_value(OPTION_JOYSTICK, true, OPTION_PRIORITY_CMDLINE);
+		m_options->set_value(OPTION_MOUSE, true, OPTION_PRIORITY_CMDLINE);
 		m_options->set_value(OPTION_NVRAM_SAVE, true, OPTION_PRIORITY_CMDLINE);
 		set_option(*m_options, OPTION_MEDIAPATH, config.bios_directory);
 		set_option(*m_options, OPTION_CFG_DIRECTORY, config.cfg_directory);
 		set_option(*m_options, OPTION_NVRAM_DIRECTORY, config.nvram_directory);
 		set_option(*m_options, OPTION_STATE_DIRECTORY, join_path(config.nvram_directory, "state"));
 		set_option(*m_options, OPTION_SNAPSHOT_DIRECTORY, join_path(config.nvram_directory, "snap"));
+
+		// Configurar los dispositivos de los puertos pad1 y pad2
+		if (!config.pad1_device.empty())
+		{
+			m_options->set_value("pad1", config.pad1_device.c_str(), OPTION_PRIORITY_CMDLINE);
+			fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[MAME_BRIDGE] Configurando pad1 = %s\n", config.pad1_device.c_str());
+		}
+		if (!config.pad2_device.empty() && config.pad2_device != "none")
+		{
+			m_options->set_value("pad2", config.pad2_device.c_str(), OPTION_PRIORITY_CMDLINE);
+			fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[MAME_BRIDGE] Configurando pad2 = %s\n", config.pad2_device.c_str());
+		}
 
 		if (!config.content_path.empty())
 		{
@@ -852,6 +945,122 @@ public:
 		return false;
 	}
 
+	void set_joystick_input(unsigned player, bool up, bool down, bool left, bool right, bool button1, bool button2, bool start, bool select)
+	{
+		if (!m_running || !m_machine)
+			return;
+
+		// Forzar los valores directamente en los ioports de MAME
+		// Esto es necesario porque MAME no está llamando a pad_item_state para las direcciones del joystick
+		// Similar a cómo XM6 usa xm6_input_joy() para forzar el estado del joystick directamente en la VM
+		
+		// Log a archivo separado
+		static int log_count = 0;
+		if (log_count < 10) {
+			FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
+			if (f) {
+				fprintf(f, "[DIRECT_INPUT] P%d: up=%d down=%d left=%d right=%d btn1=%d btn2=%d start=%d select=%d\n",
+					player + 1, up, down, left, right, button1, button2, start, select);
+				fclose(f);
+			}
+			log_count++;
+		}
+
+		// Listar TODOS los puertos disponibles (solo la primera vez)
+		static bool listed_all_ports = false;
+		if (!listed_all_ports) {
+			FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
+			if (f) {
+				fprintf(f, "[DIRECT_INPUT] === LISTANDO TODOS LOS PUERTOS DISPONIBLES ===\n");
+				for (auto &port_pair : m_machine->ioport().ports())
+				{
+					fprintf(f, "[DIRECT_INPUT] Puerto disponible: '%s'\n", port_pair.first.c_str());
+				}
+				fprintf(f, "[DIRECT_INPUT] === FIN DE LISTA DE PUERTOS ===\n");
+				fclose(f);
+			}
+			listed_all_ports = true;
+		}
+
+		// Buscar el puerto del townspad para este jugador iterando por todos los puertos
+		// Los puertos reales son ":pad1:townspad:PAD" y ":pad2:townspad:PAD"
+		std::string port_tag_suffix = player == 0 ? "pad1:townspad:PAD" : "pad2:townspad:PAD";
+		ioport_port *target_port = nullptr;
+		
+		for (auto &port_pair : m_machine->ioport().ports())
+		{
+			const std::string &tag = port_pair.first;
+			if (tag.find(port_tag_suffix) != std::string::npos)
+			{
+				target_port = port_pair.second.get();
+				// Log solo la primera vez
+				static bool logged_port[2] = {false, false};
+				if (!logged_port[player]) {
+					FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
+					if (f) {
+						fprintf(f, "[DIRECT_INPUT] Encontrado puerto: %s\n", tag.c_str());
+						fclose(f);
+					}
+					logged_port[player] = true;
+				}
+				break;
+			}
+		}
+		
+		if (!target_port)
+		{
+			// Log solo la primera vez para no saturar el log
+			static bool logged_error[2] = {false, false};
+			if (!logged_error[player])
+			{
+				FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
+				if (f) {
+					fprintf(f, "[DIRECT_INPUT] No se pudo encontrar el puerto del townspad para P%d\n", player + 1);
+					fclose(f);
+				}
+				logged_error[player] = true;
+			}
+			return;
+		}
+
+		// Construir el valor del puerto basado en los inputs
+		// Según townspad.cpp:
+		// Bit 0 (0x001): UP (activo bajo)
+		// Bit 1 (0x002): DOWN (activo bajo)
+		// Bit 2 (0x004): LEFT (activo bajo)
+		// Bit 3 (0x008): RIGHT (activo bajo)
+		// Bit 4 (0x010): BUTTON1 (A) (activo bajo)
+		// Bit 5 (0x020): BUTTON2 (B) (activo bajo)
+		// Bit 8 (0x100): START (Run) (activo bajo)
+		// Bit 9 (0x200): SELECT (activo bajo)
+		
+		ioport_value value = 0xFFFF; // Todos los bits en alto (ningún botón presionado)
+		
+		if (up)     value &= ~0x001;
+		if (down)   value &= ~0x002;
+		if (left)   value &= ~0x004;
+		if (right)  value &= ~0x008;
+		if (button1) value &= ~0x010;
+		if (button2) value &= ~0x020;
+		if (start)  value &= ~0x100;
+		if (select) value &= ~0x200;
+		
+		// Forzar el valor en cada campo del puerto
+		for (ioport_field &field : target_port->fields())
+		{
+			if (field.enabled())
+			{
+				// Calcular el valor para este campo específico basado en su máscara
+				ioport_value field_value = value & field.mask();
+				
+				// set_value espera el valor "activo", no el valor del puerto
+				// Como los bits son activos bajos, necesitamos invertir la lógica
+				bool is_active = (field_value != field.mask());
+				field.set_value(is_active ? 1 : 0);
+			}
+		}
+	}
+
 private:
 	std::string first_cpu_snapshot() const
 	{
@@ -1006,6 +1215,11 @@ bool session::execution_snapshot(runtime_snapshot &snapshot) const
 bool session::copy_video_frame(uint32_t *pixels, unsigned max_width, unsigned max_height, unsigned &width, unsigned &height)
 {
 	return m_impl->copy_video_frame(pixels, max_width, max_height, width, height);
+}
+
+void session::set_joystick_input(unsigned player, bool up, bool down, bool left, bool right, bool button1, bool button2, bool start, bool select)
+{
+	m_impl->set_joystick_input(player, up, down, left, right, button1, button2, start, select);
 }
 
 } // namespace fmtowns::mame_bridge
