@@ -33,6 +33,7 @@ std::string g_system_directory;
 std::string g_bios_directory;
 std::string g_model = "fmtownsux";
 std::string g_content_path;
+std::string g_ram_size = "default";
 std::string g_pad1_device = "townspad";
 std::string g_pad2_device = "none";
 std::array<uint32_t, k_width * k_height> g_framebuffer = {};
@@ -209,6 +210,7 @@ void stop_watchdog()
 
 const retro_variable k_variables[] = {
 	{ "fmtowns_model", "FM Towns model; fmtownsux|fmtmarty|fmtownssj|fmtowns|fmtownsv03|fmtownshr|fmtownsmx|fmtownsftv|fmtmarty2|carmarty" },
+	{ "fmtowns_ram", "Memory size; default|1M|2M|3M|4M|5M|6M|8M|10M|12M|14M|16M|18M|20M|22M|24M|26M|28M|30M|32M|36M|38M|40M|42M|44M|46M|48M|52M|53M|54M|56M|60M|68M|70M|72M|76M|84M|100M" },
 	{ "fmtowns_pad1", "Port 1 device; townspad|towns6b|martypad|none" },
 	{ "fmtowns_pad2", "Port 2 device; none|townspad|towns6b|martypad" },
 	{ "fmtowns_mouse", "Mouse; enabled|disabled" },
@@ -276,6 +278,7 @@ public:
 		boot.content_path = m_content;
 		boot.cfg_directory = cfg_directory;
 		boot.nvram_directory = nvram_directory;
+		boot.ram_size = g_ram_size;
 		boot.pad1_device = g_pad1_device;
 		boot.pad2_device = g_pad2_device;
 
@@ -599,11 +602,13 @@ void set_core_options()
 void refresh_core_options()
 {
 	g_model = fmtowns::libretro_osd::variable_value("fmtowns_model", "fmtownsux");
+	g_ram_size = fmtowns::libretro_osd::variable_value("fmtowns_ram", "default");
 	const bool is_marty = g_model == "fmtmarty" || g_model == "fmtmarty2" || g_model == "carmarty";
 	g_pad1_device = fmtowns::libretro_osd::variable_value("fmtowns_pad1", is_marty ? "martypad" : "townspad");
 	g_pad2_device = fmtowns::libretro_osd::variable_value("fmtowns_pad2", "none");
 	const std::string mouse = fmtowns::libretro_osd::variable_value("fmtowns_mouse", "enabled");
-	fmtowns::libretro_osd::log(RETRO_LOG_INFO, "Input profile: pad1=%s, pad2=%s, mouse=%s.\n",
+	fmtowns::libretro_osd::log(RETRO_LOG_INFO, "Input profile: ram=%s, pad1=%s, pad2=%s, mouse=%s.\n",
+			g_ram_size.c_str(),
 			g_pad1_device.c_str(), g_pad2_device.c_str(), mouse.c_str());
 }
 

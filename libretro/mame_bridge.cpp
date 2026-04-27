@@ -633,25 +633,49 @@ std::string lowercase_extension(const std::string &path)
 	return extension;
 }
 
-const char *slot_for_extension(const std::string &extension)
+enum class media_kind
+{
+	cdrom,
+	floppy,
+	harddisk,
+	unknown
+};
+
+media_kind kind_for_extension(const std::string &extension)
 {
 	if (extension == "chd" || extension == "cue" || extension == "toc" ||
 			extension == "nrg" || extension == "gdi" || extension == "iso" ||
 			extension == "cdr")
-		return "cdrom";
+		return media_kind::cdrom;
 
 	if (extension == "mfi" || extension == "dfi" || extension == "mfm" ||
 			extension == "td0" || extension == "imd" || extension == "86f" ||
 			extension == "d77" || extension == "d88" || extension == "1dd" ||
 			extension == "cqm" || extension == "cqi" || extension == "dsk" ||
 			extension == "bin")
-		return "floppydisk1";
+		return media_kind::floppy;
 
 	if (extension == "hd" || extension == "hdv" || extension == "2mg" ||
 			extension == "hdi")
-		return "harddisk1";
+		return media_kind::harddisk;
 
-	return nullptr;
+	return media_kind::unknown;
+}
+
+const char *slot_for_media(media_kind kind, unsigned index)
+{
+	switch (kind)
+	{
+	case media_kind::cdrom:
+		return index == 0 ? "cdrom" : nullptr;
+	case media_kind::floppy:
+		return index < 4 ? (index == 0 ? "floppydisk1" : index == 1 ? "floppydisk2" : index == 2 ? "floppydisk3" : "floppydisk4") : nullptr;
+	case media_kind::harddisk:
+		return index < 4 ? (index == 0 ? "harddisk1" : index == 1 ? "harddisk2" : index == 2 ? "harddisk3" : "harddisk4") : nullptr;
+	case media_kind::unknown:
+	default:
+		return nullptr;
+	}
 }
 
 std::string parent_path(const std::string &path)
@@ -669,11 +693,12 @@ std::string trim(std::string value)
 	return std::string(first, last);
 }
 
-std::string first_m3u_entry(const std::string &playlist)
+std::vector<std::string> all_m3u_entries(const std::string &playlist)
 {
+	std::vector<std::string> entries;
 	std::ifstream file(playlist);
 	if (!file)
-		return {};
+		return entries;
 
 	const std::string base = parent_path(playlist);
 	std::string line;
@@ -683,12 +708,80 @@ std::string first_m3u_entry(const std::string &playlist)
 		if (line.empty() || line[0] == '#')
 			continue;
 
+		const std::string::size_type comment = line.find('#');
+		if (comment != std::string::npos)
+		{
+			line = trim(line.substr(0, comment));
+			if (line.empty())
+				continue;
+		}
+
 		if (line.find(':') != std::string::npos || (line.size() >= 2 && (line[0] == '\\' || line[0] == '/')))
-			return line;
-		return base.empty() ? line : join_path(base, line.c_str());
+			entries.push_back(line);
+		else
+			entries.push_back(base.empty() ? line : join_path(base, line.c_str()));
 	}
 
-	return {};
+	return entries;
+}
+
+bool mount_content_entry(emu_options &options, const std::string &path,
+		u32 &cd_count, u32 &floppy_count, u32 &harddisk_count, std::string &error)
+{
+	const std::string extension = lowercase_extension(path);
+	const media_kind kind = kind_for_extension(extension);
+	if (kind == media_kind::unknown)
+	{
+		fmtowns::libretro_osd::log(RETRO_LOG_WARN, "[MAME_BRIDGE] Ignoring unsupported media entry in playlist: %s\n", path.c_str());
+		return true;
+	}
+
+	unsigned index = 0;
+	switch (kind)
+	{
+	case media_kind::cdrom: index = cd_count++; break;
+	case media_kind::floppy: index = floppy_count++; break;
+	case media_kind::harddisk: index = harddisk_count++; break;
+	case media_kind::unknown: break;
+	}
+
+	const char *slot = slot_for_media(kind, index);
+	if (!slot)
+	{
+		fmtowns::libretro_osd::log(RETRO_LOG_WARN, "[MAME_BRIDGE] No slot available for %s (kind=%u, index=%u)\n", path.c_str(), static_cast<unsigned>(kind), index);
+		return true;
+	}
+
+	if (!options.has_image_option(slot))
+	{
+		error = std::string("FM Towns model does not expose expected media slot: ") + slot;
+		return false;
+	}
+
+	options.image_option(slot).specify(path);
+	fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[MAME_BRIDGE] Mounted %s in slot %s\n", path.c_str(), slot);
+	return true;
+}
+
+bool mount_content_paths(emu_options &options, const std::vector<std::string> &paths, std::string &error)
+{
+	if (paths.empty())
+	{
+		error = "M3U playlist is empty or unreadable";
+		return false;
+	}
+
+	u32 cd_count = 0;
+	u32 floppy_count = 0;
+	u32 harddisk_count = 0;
+
+	for (const std::string &path : paths)
+	{
+		if (!mount_content_entry(options, path, cd_count, floppy_count, harddisk_count, error))
+			return false;
+	}
+
+	return true;
 }
 
 constexpr const char *k_canary_path = "C:\\sw\\fmtowns-master\\build\\libretro64\\boot_canary.log";
@@ -756,6 +849,11 @@ public:
 		set_option(*m_options, OPTION_NVRAM_DIRECTORY, config.nvram_directory);
 		set_option(*m_options, OPTION_STATE_DIRECTORY, join_path(config.nvram_directory, "state"));
 		set_option(*m_options, OPTION_SNAPSHOT_DIRECTORY, join_path(config.nvram_directory, "snap"));
+		if (!config.ram_size.empty() && config.ram_size != "default")
+		{
+			set_option(*m_options, OPTION_RAMSIZE, config.ram_size);
+			fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[MAME_BRIDGE] RAM size set to %s\n", config.ram_size.c_str());
+		}
 
 		// Configurar los dispositivos de los puertos pad1 y pad2
 		if (!config.pad1_device.empty())
@@ -769,39 +867,32 @@ public:
 			fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[MAME_BRIDGE] Configurando pad2 = %s\n", config.pad2_device.c_str());
 		}
 
-		if (!config.content_path.empty())
-		{
-			std::string content_path = config.content_path;
-			std::string extension = lowercase_extension(content_path);
-			if (extension == "m3u")
+			if (!config.content_path.empty())
 			{
-				content_path = first_m3u_entry(config.content_path);
-				if (content_path.empty())
+				std::vector<std::string> media_paths;
+				const std::string extension = lowercase_extension(config.content_path);
+				if (extension == "m3u")
+			{
+				media_paths = all_m3u_entries(config.content_path);
+				if (media_paths.empty())
 				{
 					error = "M3U playlist is empty or unreadable: " + config.content_path;
 					stop();
 					return false;
+					}
+					fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[MAME_BRIDGE] Playlist contains %zu entries\n", media_paths.size());
 				}
-				extension = lowercase_extension(content_path);
-			}
+				else
+				{
+					media_paths.push_back(config.content_path);
+				}
 
-			const char *slot = slot_for_extension(extension);
-			if (!slot)
-			{
-				error = "Unsupported direct content extension for v1: ." + extension;
-				stop();
-				return false;
+				if (!mount_content_paths(*m_options, media_paths, error))
+				{
+					stop();
+					return false;
+				}
 			}
-
-			if (!m_options->has_image_option(slot))
-			{
-				error = std::string("FM Towns model does not expose expected media slot: ") + slot;
-				stop();
-				return false;
-			}
-
-			m_options->image_option(slot).specify(content_path);
-		}
 
 		m_config = std::make_unique<machine_config>(driver_list::driver(driver_index), *m_options);
 		m_machine = std::make_unique<running_machine>(*m_config, *m_manager);
