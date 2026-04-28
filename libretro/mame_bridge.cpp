@@ -485,7 +485,7 @@ public:
 		sink.m_id = m_default_sink_id;
 		sink.m_name = "libretro";
 		sink.m_display_name = "Libretro Audio";
-		sink.m_rate = { 44100, 8000, 96000 };
+		sink.m_rate = { 48000, 8000, 96000 };
 		sink.m_sinks = 2;
 		sink.m_sources = 0;
 		sink.m_port_names = { "Left", "Right" };
@@ -911,6 +911,7 @@ public:
 		}
 
 		append_canary_line("session_after_libretro_start_ok\n");
+		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[MAME_BRIDGE] Machine sample rate=%u\n", m_machine->sample_rate());
 		unsigned audio_channels = 0;
 		for (speaker_device &speaker : speaker_device_enumerator(m_machine->root_device()))
 			audio_channels += speaker.inputs();

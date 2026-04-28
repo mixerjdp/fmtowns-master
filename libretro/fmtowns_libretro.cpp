@@ -27,7 +27,7 @@ namespace {
 constexpr unsigned k_width = 640;
 constexpr unsigned k_height = 480;
 constexpr double k_fps = 60.0;
-constexpr double k_sample_rate = 44100.0;
+constexpr double k_sample_rate = 48000.0;
 
 std::string g_system_directory;
 std::string g_bios_directory;
