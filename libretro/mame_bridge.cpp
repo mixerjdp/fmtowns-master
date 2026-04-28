@@ -971,18 +971,17 @@ public:
 
 	void stop()
 	{
+		m_running = false;
+
 		if (m_manager)
 			m_manager->destroy_ui();
 
-		// TODO: MAME teardown through this no-frontend route currently trips a
-		// destructor-order crash. Leak the session objects on unload for now so
-		// RetroArch can safely exit/switch while the bootstrap path matures.
-		m_machine.release();
-		m_config.release();
-		m_manager.release();
-		m_osd.release();
-		m_options.release();
-		m_running = false;
+		m_machine.reset();
+		m_config.reset();
+		m_manager.reset();
+		m_osd.reset();
+		m_options.reset();
+		m_video_buffer.clear();
 	}
 
 	bool running() const

@@ -209,10 +209,10 @@ void stop_watchdog()
 }
 
 const retro_variable k_variables[] = {
-	{ "fmtowns_model", "FM Towns model; fmtownsux|fmtmarty|fmtownssj|fmtowns|fmtownsv03|fmtownshr|fmtownsmx|fmtownsftv|fmtmarty2|carmarty" },
-	{ "fmtowns_ram", "Memory size; default|1M|2M|3M|4M|5M|6M|8M|10M|12M|14M|16M|18M|20M|22M|24M|26M|28M|30M|32M|36M|38M|40M|42M|44M|46M|48M|52M|53M|54M|56M|60M|68M|70M|72M|76M|84M|100M" },
-	{ "fmtowns_pad1", "Port 1 device; townspad|towns6b|martypad|none" },
-	{ "fmtowns_pad2", "Port 2 device; none|townspad|towns6b|martypad" },
+	{ "fmtowns_model", "FM Towns Model (Restart needed); fmtownsux|fmtmarty|fmtownssj|fmtowns|fmtownsv03|fmtownshr|fmtownsmx|fmtownsftv|fmtmarty2|carmarty" },
+	{ "fmtowns_ram", "Memory Size (Restart needed); default|1M|2M|3M|4M|5M|6M|8M|10M|12M|14M|16M|18M|20M|22M|24M|26M|28M|30M|32M|36M|38M|40M|42M|44M|46M|48M|52M|53M|54M|56M|60M|68M|70M|72M|76M|84M|100M" },
+	{ "fmtowns_pad1", "Port 1 Device (Restart needed); townspad|towns6b|martypad|none" },
+	{ "fmtowns_pad2", "Port 2 Device (Restart needed); none|townspad|towns6b|martypad" },
 	{ "fmtowns_mouse", "Mouse; enabled|disabled" },
 	{ nullptr, nullptr }
 };
@@ -691,7 +691,7 @@ RETRO_API_EXPORT void retro_get_system_info(retro_system_info *info)
 
 	std::memset(info, 0, sizeof(*info));
 	info->library_name = "FM Towns (MAME)";
-	info->library_version = "0.0-mame-bridge";
+	info->library_version = "0.287";
 	info->valid_extensions = "chd|cue|toc|nrg|gdi|iso|cdr|mfi|dfi|mfm|td0|imd|86f|d77|d88|1dd|cqm|cqi|dsk|bin|hd|hdv|2mg|hdi|m3u";
 	info->need_fullpath = true;
 	info->block_extract = true;
