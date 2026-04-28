@@ -297,6 +297,46 @@ public:
 		return true;
 	}
 
+	size_t savestate_size(std::string &error) const
+	{
+		if (!m_mame)
+		{
+			error = "MAME runtime is not initialized";
+			return 0;
+		}
+
+		return m_mame->savestate_size(error);
+	}
+
+	bool save_state(void *data, size_t size, std::string &error)
+	{
+		if (!m_mame)
+		{
+			error = "MAME runtime is not initialized";
+			return false;
+		}
+
+		return m_mame->save_state(data, size, error);
+	}
+
+	bool load_state(const void *data, size_t size, std::string &error)
+	{
+		if (!m_mame)
+		{
+			error = "MAME runtime is not initialized";
+			return false;
+		}
+
+		const bool ok = m_mame->load_state(data, size, error);
+		if (ok)
+		{
+			m_reset_pending = false;
+			clear_framebuffer();
+			m_have_real_frame = false;
+		}
+		return ok;
+	}
+
 	void reset()
 	{
 		if (m_state == runtime_state::stopped)
@@ -352,6 +392,8 @@ public:
 		}
 
 		++m_frame;
+		if (m_mame)
+			m_mame->advance_savestate_guard();
 		g_last_completed_frame.store(m_frame);
 		g_run_stage.store(static_cast<unsigned>(run_stage::done));
 	}
@@ -870,17 +912,33 @@ RETRO_API_EXPORT void retro_run(void)
 
 RETRO_API_EXPORT size_t retro_serialize_size(void)
 {
-	return 0;
+	std::string error;
+	const size_t size = g_runtime.savestate_size(error);
+	if (size == 0 && !error.empty())
+		fmtowns::libretro_osd::log(RETRO_LOG_WARN, "Savestate size unavailable: %s\n", error.c_str());
+	return size;
 }
 
-RETRO_API_EXPORT bool retro_serialize(void *, size_t)
+RETRO_API_EXPORT bool retro_serialize(void *data, size_t size)
 {
-	return false;
+	std::string error;
+	if (!g_runtime.save_state(data, size, error))
+	{
+		fmtowns::libretro_osd::log(RETRO_LOG_WARN, "Savestate save failed: %s\n", error.c_str());
+		return false;
+	}
+	return true;
 }
 
-RETRO_API_EXPORT bool retro_unserialize(const void *, size_t)
+RETRO_API_EXPORT bool retro_unserialize(const void *data, size_t size)
 {
-	return false;
+	std::string error;
+	if (!g_runtime.load_state(data, size, error))
+	{
+		fmtowns::libretro_osd::log(RETRO_LOG_WARN, "Savestate load failed: %s\n", error.c_str());
+		return false;
+	}
+	return true;
 }
 
 RETRO_API_EXPORT void retro_cheat_reset(void)

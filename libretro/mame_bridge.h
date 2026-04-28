@@ -2,6 +2,7 @@
 #define FMTOWNS_MAME_BRIDGE_H
 
 #include <cstdint>
+#include <cstddef>
 #include <memory>
 #include <string>
 
@@ -42,6 +43,10 @@ public:
 	void log_video_snapshot(const char *stage);
 	void force_video_update();
 	bool execution_snapshot(runtime_snapshot &snapshot) const;
+	size_t savestate_size(std::string &error) const;
+	bool save_state(void *data, size_t size, std::string &error);
+	bool load_state(const void *data, size_t size, std::string &error);
+	void advance_savestate_guard();
 	void reset();
 	void stop();
 	bool running() const;

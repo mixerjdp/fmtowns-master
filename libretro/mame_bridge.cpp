@@ -33,6 +33,9 @@ namespace fmtowns::screen_capture {
 
 namespace {
 
+constexpr unsigned k_savestate_guard_frames_boot = 180;
+constexpr unsigned k_savestate_guard_frames_post_load = 180;
+
 enum retro_key : unsigned
 {
 	RETROK_BACKSPACE = 8,
@@ -912,6 +915,7 @@ public:
 
 		append_canary_line("session_after_libretro_start_ok\n");
 		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[MAME_BRIDGE] Machine sample rate=%u\n", m_machine->sample_rate());
+		m_savestate_guard_countdown = k_savestate_guard_frames_boot;
 		unsigned audio_channels = 0;
 		for (speaker_device &speaker : speaker_device_enumerator(m_machine->root_device()))
 			audio_channels += speaker.inputs();
@@ -928,6 +932,12 @@ public:
 		{
 			m_machine->libretro_run_slice();
 		}
+	}
+
+	void advance_savestate_guard()
+	{
+		if (m_savestate_guard_countdown > 0)
+			--m_savestate_guard_countdown;
 	}
 
 	void force_video_update()
@@ -969,6 +979,70 @@ public:
 			m_machine->schedule_soft_reset();
 	}
 
+	size_t savestate_size(std::string &error) const
+	{
+		if (!m_running || !m_machine)
+		{
+			error = "MAME session is not running";
+			return 0;
+		}
+
+		const size_t size = ::ram_state::get_size(m_machine->save());
+		if (size == 0)
+			error = "MAME save state size is zero";
+		return size;
+	}
+
+	bool save_state(void *data, size_t size, std::string &error)
+	{
+		if (!m_running || !m_machine)
+		{
+			error = "MAME session is not running";
+			return false;
+		}
+
+		if (m_savestate_guard_countdown > 0)
+		{
+			error = "Savestate blocked while the runtime is stabilizing";
+			fmtowns::libretro_osd::log(RETRO_LOG_WARN, "[MAME_BRIDGE] Savestate denied (%u frames remaining)\n", m_savestate_guard_countdown);
+			return false;
+		}
+
+		if (m_machine->save().write_buffer(data, size) != STATERR_NONE)
+		{
+			error = "MAME savestate write failed";
+			return false;
+		}
+
+		return true;
+	}
+
+	bool load_state(const void *data, size_t size, std::string &error)
+	{
+		if (!m_running || !m_machine)
+		{
+			error = "MAME session is not running";
+			return false;
+		}
+
+		if (m_savestate_guard_countdown > 0)
+		{
+			error = "Savestate blocked while the runtime is stabilizing";
+			fmtowns::libretro_osd::log(RETRO_LOG_WARN, "[MAME_BRIDGE] Unserialize denied (%u frames remaining)\n", m_savestate_guard_countdown);
+			return false;
+		}
+
+		if (m_machine->save().read_buffer(data, size) != STATERR_NONE)
+		{
+			error = "MAME savestate read failed";
+			return false;
+		}
+
+		m_savestate_guard_countdown = k_savestate_guard_frames_post_load;
+		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[MAME_BRIDGE] Savestate loaded successfully\n");
+		return true;
+	}
+
 	void stop()
 	{
 		m_running = false;
@@ -982,6 +1056,7 @@ public:
 		m_osd.reset();
 		m_options.reset();
 		m_video_buffer.clear();
+		m_savestate_guard_countdown = 0;
 	}
 
 	bool running() const
@@ -1248,6 +1323,7 @@ private:
 	std::unique_ptr<machine_config> m_config;
 	std::unique_ptr<running_machine> m_machine;
 	std::vector<uint32_t> m_video_buffer;
+	unsigned m_savestate_guard_countdown = 0;
 	bool m_running = false;
 };
 
@@ -1266,6 +1342,11 @@ bool session::start(const boot_config &config, std::string &error)
 void session::run_slice()
 {
 	m_impl->run_slice();
+}
+
+void session::advance_savestate_guard()
+{
+	m_impl->advance_savestate_guard();
 }
 
 void session::reset()
@@ -1301,6 +1382,21 @@ void session::force_video_update()
 bool session::execution_snapshot(runtime_snapshot &snapshot) const
 {
 	return m_impl->execution_snapshot(snapshot);
+}
+
+size_t session::savestate_size(std::string &error) const
+{
+	return m_impl->savestate_size(error);
+}
+
+bool session::save_state(void *data, size_t size, std::string &error)
+{
+	return m_impl->save_state(data, size, error);
+}
+
+bool session::load_state(const void *data, size_t size, std::string &error)
+{
+	return m_impl->load_state(data, size, error);
 }
 
 bool session::copy_video_frame(uint32_t *pixels, unsigned max_width, unsigned max_height, unsigned &width, unsigned &height)
