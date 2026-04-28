@@ -302,7 +302,11 @@ public:
 		if (m_state == runtime_state::stopped)
 			return;
 
-		m_reset_pending = true;
+		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "Phase 3 runtime reset requested; restarting content.\n");
+		if (!load(m_model, m_content, m_bios_directory, m_bios_ready))
+			fmtowns::libretro_osd::log(RETRO_LOG_ERROR, "Phase 3 runtime restart failed during reset.\n");
+		else
+			fmtowns::libretro_osd::log(RETRO_LOG_INFO, "Phase 3 runtime restart completed.\n");
 	}
 
 	void run_frame()
