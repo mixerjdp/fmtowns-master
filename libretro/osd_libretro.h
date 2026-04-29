@@ -53,6 +53,8 @@ void configure_environment(const retro_variable *variables);
 void poll_input();
 bool joypad_pressed(unsigned port, unsigned id);
 int16_t joypad_analog(unsigned port, unsigned index, unsigned id);
+int16_t mouse_axis(unsigned port, unsigned id);
+bool mouse_pressed(unsigned port, unsigned id);
 bool keyboard_pressed(unsigned key);
 
 std::string system_directory();

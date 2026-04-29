@@ -1,0 +1,114 @@
+Fork libretro propio para FM Towns sobre MAME aislado, sin UI de MAME
+Resumen
+
+Crear un fork fmtowns_libretro que reutilice la emulación FM Towns/Marty del árbol MAME aislado, pero con una ruta de ejecución y OSD específicas para libretro, eliminando por diseño la UI de MAME del core para reducir tamaño del DLL, dependencias y superficie de integración.
+
+Decisiones fijadas:
+
+Plataforma oficial v1: Win64
+Cobertura: toda la familia Towns/Marty
+Carga de contenido: medios directos + .m3u
+Sin software list ni aliases tipo rayxanbr dentro del core
+Sin UI interna de MAME
+Sin debugger, HTTP server, Lua/plugins, BGFX ni ventanas nativas en el core
+BIOS/firmware: seguir usando layout compatible con MAME para no reescribir el loader base
+Fases
+
+Fase 0: definir target libretro lean
+Crear un target nuevo fmtowns_libretro separado de fmtowns.exe, con carpeta libretro/ propia.
+El target debe compilar solo:
+
+el subset FM Towns/Marty ya aislado
+runtime mínimo de MAME
+OSD libretro nuevo
+Debe excluir desde build:
+frontend CLI/UI de MAME
+menús internos
+debugger
+BGFX y renderers de ventana
+plugins/Lua/HTTP
+utilidades y tooling no necesarios
+Criterio de salida: DLL libretro mínima que carga pero todavía sin emulación funcional.
+Fase 1: ruta de arranque sin frontend MAME
+Reemplazar la entrada basada en cli_frontend y mame_machine_manager::execute() por una ruta de boot interna para libretro.
+El objetivo es instanciar directamente:
+
+opciones mínimas
+machine_config
+running_machine
+driver FM Towns seleccionado
+Esta fase debe evitar por completo la creación de mame_ui_manager.
+Si hace falta, introducir una variante de manager o bootstrap especializada que no llame ui_initialize() ni dependa de chooser/startup screens.
+Criterio de salida: la máquina puede arrancar hasta BIOS sin pasar por UI/CLI.
+
+Fase 2: loop no bloqueante para retro_run()
+Adaptar el loop de running_machine a una ejecución por frame o por slice externa, tomando como referencia la ruta Emscripten ya presente en machine.cpp.
+El core debe:
+
+arrancar una vez en retro_load_game()
+avanzar en retro_run()
+procesar reset, exit y saveload sin loop bloqueante
+El implementador no debe crear un proceso externo ni invocar fmtowns.exe; todo debe correr in-process como core libretro.
+Criterio de salida: retro_run() avanza la emulación de forma estable.
+
+Fase 3: OSD libretro mínimo, sin ventanas
+Implementar osd_libretro_interface con solo lo necesario:
+
+video desde screen_device::curbitmap() y visible_area()
+audio a retro_audio_sample_batch
+input desde callbacks libretro
+fuentes/dummy modules mínimos donde el core los exija
+El video no debe usar la UI de MAME ni render targets de menú; solo framebuffer del sistema emulado.
+Usar renderer none o ruta equivalente donde ayude a evitar dependencias, pero el plan debe priorizar salida de framebuffer crudo sobre el stack de window/render completo.
+Criterio de salida: BIOS visible dentro del frontend libretro con audio e input.
+
+Fase 4: contenido directo y autodetección de slot
+Implementar carga directa sin hash:
+
+CD: .chd .cue .toc .nrg .gdi .iso .cdr -> cdrom
+floppy: .mfi .dfi .mfm .td0 .imd .86f .d77 .d88 .1dd .cqm .cqi .dsk .bin -> flop1
+HDD: .chd .hd .hdv .2mg .hdi -> hard1
+.m3u -> control de discos
+Rechazar .zip como contenido directo en v1.
+Modelo por defecto: fmtownsux.
+Añadir core option fmtowns_model para toda la familia Towns/Marty.
+Criterio de salida: CHD directo y playlist multidisco funcionales.
+
+Fase 5: opciones, persistencia y release candidate
+Añadir solo opciones de core de alto valor:
+
+fmtowns_model
+fmtowns_pad1
+fmtowns_pad2
+fmtowns_mouse
+Persistencia mínima:
+nvram
+memcard/icm
+cfg necesaria del core si aplica
+Savestates:
+habilitarlos solo si pasan la matriz mínima
+si no pasan, dejarlos desactivados explícitamente en v1
+Criterio de salida: DLL Win64 usable en RetroArch, sin UI de MAME y con footprint claramente menor al ejecutable normal.
+Cambios importantes de arquitectura
+
+No se hará un “XM6-style engine extraction” del driver FM Towns.
+Sí se hará un wrapper/libretro runtime alrededor del core de MAME, pero con bootstrap propio.
+El core no debe enlazar ni inicializar la UI de MAME.
+El build debe introducir una variante lean del runtime con exclusiones explícitas para reducir tamaño del DLL.
+La referencia C:\sw\XM62026 sirve como modelo de capa libretro y checklist funcional, no como modelo de separación arquitectónica interna.
+Pruebas
+
+Boot sin contenido a BIOS con fmtownsux
+CHD directo: Rayxanber
+Floppy directo: un juego de disquete
+HDD directo: un disco en modelo SCSI válido
+Cambio de modelo entre fmtownsux, fmtmarty, fmtownssj
+.m3u multidisco y disk swap
+Input básico: teclado, pad y mouse
+Verificación de que no aparece UI de MAME ni menús internos
+Comparativa de tamaño del DLL contra una build con frontend/UI para validar el recorte
+Supuestos
+
+El ahorro fuerte de tamaño viene de excluir frontend/UI/debugger/renderers pesados desde build, no solo de poner ui_active=0
+Se acepta perder completamente aliases de software list dentro del core a cambio de simplicidad y tamaño
+Se acepta que v1 priorice medios directos y no compatibilidad completa con todas las funciones auxiliares de MAME

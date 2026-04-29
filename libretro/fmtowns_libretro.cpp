@@ -36,6 +36,7 @@ std::string g_content_path;
 std::string g_ram_size = "default";
 std::string g_pad1_device = "townspad";
 std::string g_pad2_device = "none";
+bool g_mouse_enabled = true;
 std::array<uint32_t, k_width * k_height> g_framebuffer = {};
 
 constexpr const char *k_screen_trace_path = "C:\\sw\\fmtowns-master\\build\\libretro64\\fmtowns_screen_update.log";
@@ -211,8 +212,8 @@ void stop_watchdog()
 const retro_variable k_variables[] = {
 	{ "fmtowns_model", "FM Towns Model (Restart needed); fmtownsux|fmtmarty|fmtownssj|fmtowns|fmtownsv03|fmtownshr|fmtownsmx|fmtownsftv|fmtmarty2|carmarty" },
 	{ "fmtowns_ram", "Memory Size (Restart needed); default|1M|2M|3M|4M|5M|6M|8M|10M|12M|14M|16M|18M|20M|22M|24M|26M|28M|30M|32M|36M|38M|40M|42M|44M|46M|48M|52M|53M|54M|56M|60M|68M|70M|72M|76M|84M|100M" },
-	{ "fmtowns_pad1", "Port 1 Device (Restart needed); townspad|towns6b|martypad|none" },
-	{ "fmtowns_pad2", "Port 2 Device (Restart needed); none|townspad|towns6b|martypad" },
+	{ "fmtowns_pad1", "Port 1 Device (Restart needed); townspad|towns6b|martypad|mouse|none" },
+	{ "fmtowns_pad2", "Port 2 Device (Restart needed); none|townspad|towns6b|martypad|mouse" },
 	{ "fmtowns_mouse", "Mouse; enabled|disabled" },
 	{ nullptr, nullptr }
 };
@@ -468,6 +469,14 @@ public:
 		}
 	}
 
+	void set_mouse_input(int16_t delta_x, int16_t delta_y, bool left_button, bool right_button, bool middle_button)
+	{
+		if (m_mame && m_mame->running())
+		{
+			m_mame->set_mouse_input(delta_x, delta_y, left_button, right_button, middle_button);
+		}
+	}
+
 private:
 	void update_execution_snapshot()
 	{
@@ -653,6 +662,7 @@ void refresh_core_options()
 	g_pad1_device = fmtowns::libretro_osd::variable_value("fmtowns_pad1", is_marty ? "martypad" : "townspad");
 	g_pad2_device = fmtowns::libretro_osd::variable_value("fmtowns_pad2", "none");
 	const std::string mouse = fmtowns::libretro_osd::variable_value("fmtowns_mouse", "enabled");
+	g_mouse_enabled = mouse != "disabled" || g_pad1_device == "mouse" || g_pad2_device == "mouse";
 	fmtowns::libretro_osd::log(RETRO_LOG_INFO, "Input profile: ram=%s, pad1=%s, pad2=%s, mouse=%s.\n",
 			g_ram_size.c_str(),
 			g_pad1_device.c_str(), g_pad2_device.c_str(), mouse.c_str());
@@ -898,6 +908,16 @@ RETRO_API_EXPORT void retro_run(void)
 			// Enviar el input a MAME siempre (no solo cuando hay direcciones)
 			// Esto asegura que los botones también se envíen correctamente
 			g_runtime.set_joystick_input(player, final_up, final_down, final_left, final_right, button1, button2, start, select);
+		}
+
+		if (g_mouse_enabled)
+		{
+			const int16_t mouse_x = fmtowns::libretro_osd::mouse_axis(0, RETRO_DEVICE_ID_MOUSE_X);
+			const int16_t mouse_y = fmtowns::libretro_osd::mouse_axis(0, RETRO_DEVICE_ID_MOUSE_Y);
+			const bool mouse_left = fmtowns::libretro_osd::mouse_pressed(0, RETRO_DEVICE_ID_MOUSE_LEFT);
+			const bool mouse_right = fmtowns::libretro_osd::mouse_pressed(0, RETRO_DEVICE_ID_MOUSE_RIGHT);
+			const bool mouse_middle = fmtowns::libretro_osd::mouse_pressed(0, RETRO_DEVICE_ID_MOUSE_MIDDLE);
+			g_runtime.set_mouse_input(mouse_x, mouse_y, mouse_left, mouse_right, mouse_middle);
 		}
 	}
 

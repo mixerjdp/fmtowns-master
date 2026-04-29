@@ -104,6 +104,16 @@ int16_t joypad_analog(unsigned port, unsigned index, unsigned id)
 	return g_input_state ? g_input_state(port, RETRO_DEVICE_ANALOG, index, id) : 0;
 }
 
+int16_t mouse_axis(unsigned port, unsigned id)
+{
+	return g_input_state ? g_input_state(port, RETRO_DEVICE_MOUSE, 0, id) : 0;
+}
+
+bool mouse_pressed(unsigned port, unsigned id)
+{
+	return g_input_state && g_input_state(port, RETRO_DEVICE_MOUSE, 0, id);
+}
+
 bool keyboard_pressed(unsigned key)
 {
 	return g_input_state && g_input_state(0, RETRO_DEVICE_KEYBOARD, 0, key);

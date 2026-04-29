@@ -922,8 +922,65 @@ public:
 		fmtowns::libretro_osd::set_mame_audio_channels(audio_channels);
 		for (screen_device &screen : screen_device_enumerator(m_machine->root_device()))
 			screen.set_video_attributes(VIDEO_ALWAYS_UPDATE);
+		m_mouse_x = 0;
+		m_mouse_y = 0;
 		m_running = true;
 		return true;
+	}
+
+	void set_mouse_input(int16_t delta_x, int16_t delta_y, bool left_button, bool right_button, bool middle_button)
+	{
+		if (!m_running || !m_machine)
+			return;
+
+		// The FM Towns mouse lives on the MSX general purpose port slot.
+		// We update the accumulated relative coordinates and the button port
+		// independently so the device sees natural mouse motion.
+		m_mouse_x = static_cast<uint32_t>(static_cast<int32_t>(m_mouse_x) + static_cast<int32_t>(delta_x)) & 0xffffu;
+		m_mouse_y = static_cast<uint32_t>(static_cast<int32_t>(m_mouse_y) + static_cast<int32_t>(delta_y)) & 0xffffu;
+
+		auto apply_port = [this] (const char *suffix, auto const &apply_field)
+		{
+			for (auto &port_pair : m_machine->ioport().ports())
+			{
+				if (port_pair.first.find(suffix) != std::string::npos)
+				{
+					for (ioport_field &field : port_pair.second->fields())
+					{
+						if (field.enabled())
+							apply_field(field);
+					}
+				}
+			}
+		};
+
+		apply_port("mouse:MOUSE_X", [this] (ioport_field &field)
+		{
+			if (field.is_analog())
+				field.set_value(m_mouse_x);
+		});
+		apply_port("mouse:MOUSE_Y", [this] (ioport_field &field)
+		{
+			if (field.is_analog())
+				field.set_value(m_mouse_y);
+		});
+		apply_port("mouse:BUTTONS", [left_button, right_button, middle_button] (ioport_field &field)
+		{
+			switch (field.type())
+			{
+			case IPT_BUTTON1:
+				field.set_value(left_button ? 1 : 0);
+				break;
+			case IPT_BUTTON2:
+				field.set_value(right_button ? 1 : 0);
+				break;
+			case IPT_BUTTON3:
+				field.set_value(middle_button ? 1 : 0);
+				break;
+			default:
+				break;
+			}
+		});
 	}
 
 	void run_slice()
@@ -1323,6 +1380,8 @@ private:
 	std::unique_ptr<machine_config> m_config;
 	std::unique_ptr<running_machine> m_machine;
 	std::vector<uint32_t> m_video_buffer;
+	uint32_t m_mouse_x = 0;
+	uint32_t m_mouse_y = 0;
 	unsigned m_savestate_guard_countdown = 0;
 	bool m_running = false;
 };
@@ -1407,6 +1466,11 @@ bool session::copy_video_frame(uint32_t *pixels, unsigned max_width, unsigned ma
 void session::set_joystick_input(unsigned player, bool up, bool down, bool left, bool right, bool button1, bool button2, bool start, bool select)
 {
 	m_impl->set_joystick_input(player, up, down, left, right, button1, button2, start, select);
+}
+
+void session::set_mouse_input(int16_t delta_x, int16_t delta_y, bool left_button, bool right_button, bool middle_button)
+{
+	m_impl->set_mouse_input(delta_x, delta_y, left_button, right_button, middle_button);
 }
 
 } // namespace fmtowns::mame_bridge
