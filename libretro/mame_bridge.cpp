@@ -655,7 +655,7 @@ media_kind kind_for_extension(const std::string &extension)
 			extension == "td0" || extension == "imd" || extension == "86f" ||
 			extension == "d77" || extension == "d88" || extension == "1dd" ||
 			extension == "cqm" || extension == "cqi" || extension == "dsk" ||
-			extension == "bin")
+			extension == "bin" || extension == "hdm")
 		return media_kind::floppy;
 
 	if (extension == "hd" || extension == "hdv" || extension == "2mg" ||
