@@ -24,8 +24,8 @@
 
 namespace {
 
-constexpr unsigned k_width = 640;
-constexpr unsigned k_height = 480;
+constexpr unsigned k_width = 768;
+constexpr unsigned k_height = 512;
 constexpr double k_fps = 60.0;
 constexpr double k_sample_rate = 48000.0;
 
