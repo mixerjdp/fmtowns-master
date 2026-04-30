@@ -62,6 +62,7 @@ std::string variable_value(const char *key, const char *fallback);
 
 void capture_xrgb8888(const uint32_t *pixels, unsigned width, unsigned height, std::size_t pitch);
 bool copy_captured_xrgb8888(uint32_t *pixels, unsigned max_width, unsigned max_height, unsigned &width, unsigned &height);
+bool set_geometry(unsigned base_width, unsigned base_height, unsigned max_width, unsigned max_height, float aspect_ratio);
 
 void present_xrgb8888(const uint32_t *pixels, unsigned width, unsigned height, std::size_t pitch);
 void push_silence(double sample_rate, double fps);

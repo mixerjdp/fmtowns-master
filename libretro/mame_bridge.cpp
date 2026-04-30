@@ -18,6 +18,7 @@
 #include <array>
 #include <cctype>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <memory>
 #include <string>
@@ -1140,16 +1141,29 @@ public:
 
 			const unsigned src_width = static_cast<unsigned>(area.width());
 			const unsigned src_height = static_cast<unsigned>(area.height());
-			width = max_width;
-			height = max_height;
-			if (!width || !height)
+			if (!src_width || !src_height)
 				return false;
+
+			const bool fits = src_width <= max_width && src_height <= max_height;
+			width = fits ? src_width : max_width;
+			height = fits ? src_height : max_height;
 
 			const size_t sample_count = static_cast<size_t>(src_width) * static_cast<size_t>(src_height);
 			if (m_video_buffer.size() < sample_count)
 				m_video_buffer.resize(sample_count);
 
 			screen.pixels(m_video_buffer.data());
+			if (fits)
+			{
+				for (unsigned y = 0; y < height; ++y)
+				{
+					uint32_t *dst = pixels + (static_cast<size_t>(y) * max_width);
+					const uint32_t *src_row = m_video_buffer.data() + (static_cast<size_t>(y) * src_width);
+					std::memcpy(dst, src_row, static_cast<size_t>(width) * sizeof(uint32_t));
+				}
+				return true;
+			}
+
 			for (unsigned y = 0; y < height; ++y)
 			{
 				uint32_t *dst = pixels + (static_cast<size_t>(y) * max_width);

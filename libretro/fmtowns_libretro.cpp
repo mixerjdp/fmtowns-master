@@ -39,6 +39,11 @@ std::string g_pad2_device = "none";
 bool g_mouse_enabled = true;
 std::array<uint32_t, k_width * k_height> g_framebuffer = {};
 
+float frame_aspect_ratio(unsigned width, unsigned height)
+{
+	return height ? static_cast<float>(width) / static_cast<float>(height) : 0.0f;
+}
+
 constexpr const char *k_screen_trace_path = "C:\\sw\\fmtowns-master\\build\\libretro64\\fmtowns_screen_update.log";
 constexpr const char *k_scheduler_trace_path = "C:\\sw\\fmtowns-master\\build\\libretro64\\scheduler_trace.log";
 constexpr const char *k_canary_path = "C:\\sw\\fmtowns-master\\build\\libretro64\\boot_canary.log";
@@ -258,6 +263,8 @@ public:
 		m_frame = 0;
 		m_reset_pending = false;
 		m_run_canary_issued = false;
+		m_video_width = 0;
+		m_video_height = 0;
 		m_mame = std::make_unique<fmtowns::mame_bridge::session>();
 
 		std::error_code fs_error;
@@ -334,6 +341,8 @@ public:
 			m_reset_pending = false;
 			clear_framebuffer();
 			m_have_real_frame = false;
+			m_video_width = 0;
+			m_video_height = 0;
 		}
 		return ok;
 	}
@@ -421,6 +430,8 @@ public:
 		g_run_slice.store(0);
 		m_reset_pending = false;
 		m_run_canary_issued = false;
+		m_video_width = 0;
+		m_video_height = 0;
 		g_runtime_loaded.store(false);
 	}
 
@@ -478,6 +489,25 @@ public:
 	}
 
 private:
+	void update_geometry(unsigned width, unsigned height)
+	{
+		if (!width || !height)
+			return;
+
+		if (width == m_video_width && height == m_video_height)
+			return;
+
+		m_video_width = width;
+		m_video_height = height;
+		if (!fmtowns::libretro_osd::set_geometry(width, height, k_width, k_height, frame_aspect_ratio(width, height)))
+		{
+			fmtowns::libretro_osd::log(RETRO_LOG_WARN,
+					"Unable to update libretro geometry to %ux%u.\n",
+					width,
+					height);
+		}
+	}
+
 	void update_execution_snapshot()
 	{
 		if (!m_mame)
@@ -546,8 +576,11 @@ private:
 	{
 		unsigned width = 0;
 		unsigned height = 0;
+		if (m_mame)
+			m_mame->force_video_update();
 		if (m_mame->copy_video_frame(g_framebuffer.data(), k_width, k_height, width, height))
 		{
+			update_geometry(width, height);
 			fmtowns::libretro_osd::present_xrgb8888(g_framebuffer.data(), width, height, k_width * sizeof(uint32_t));
 			const uint32_t first = g_framebuffer[0];
 			const uint32_t center = g_framebuffer[(static_cast<size_t>(height / 2) * k_width) + (width / 2)];
@@ -609,6 +642,8 @@ private:
 	bool m_reset_pending = false;
 	bool m_have_real_frame = false;
 	bool m_run_canary_issued = false;
+	unsigned m_video_width = 0;
+	unsigned m_video_height = 0;
 };
 
 phase3_runtime g_runtime;
@@ -759,7 +794,7 @@ RETRO_API_EXPORT void retro_get_system_av_info(retro_system_av_info *info)
 	info->geometry.base_height = k_height;
 	info->geometry.max_width = k_width;
 	info->geometry.max_height = k_height;
-	info->geometry.aspect_ratio = 4.0f / 3.0f;
+	info->geometry.aspect_ratio = frame_aspect_ratio(k_width, k_height);
 	info->timing.fps = k_fps;
 	info->timing.sample_rate = k_sample_rate;
 }

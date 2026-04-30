@@ -172,22 +172,34 @@ bool copy_captured_xrgb8888(uint32_t *pixels, unsigned max_width, unsigned max_h
 	if (!pixels || g_captured_frame.empty() || !g_captured_width || !g_captured_height || !max_width || !max_height)
 		return false;
 
-	width = max_width;
-	height = max_height;
+	if (g_captured_width > max_width || g_captured_height > max_height)
+		return false;
+
+	width = g_captured_width;
+	height = g_captured_height;
 
 	for (unsigned y = 0; y < height; ++y)
 	{
 		uint32_t *dst = pixels + (static_cast<std::size_t>(y) * max_width);
-		const unsigned src_y = std::min<unsigned>(g_captured_height - 1, (static_cast<unsigned long long>(y) * g_captured_height) / height);
-		const uint32_t *src_row = g_captured_frame.data() + (static_cast<std::size_t>(src_y) * g_captured_width);
-		for (unsigned x = 0; x < width; ++x)
-		{
-			const unsigned src_x = std::min<unsigned>(g_captured_width - 1, (static_cast<unsigned long long>(x) * g_captured_width) / width);
-			dst[x] = src_row[src_x];
-		}
+		const uint32_t *src_row = g_captured_frame.data() + (static_cast<std::size_t>(y) * g_captured_width);
+		std::memcpy(dst, src_row, static_cast<std::size_t>(width) * sizeof(uint32_t));
 	}
 
 	return true;
+}
+
+bool set_geometry(unsigned base_width, unsigned base_height, unsigned max_width, unsigned max_height, float aspect_ratio)
+{
+	if (!g_environment || !base_width || !base_height || !max_width || !max_height)
+		return false;
+
+	retro_game_geometry geometry = {};
+	geometry.base_width = base_width;
+	geometry.base_height = base_height;
+	geometry.max_width = max_width;
+	geometry.max_height = max_height;
+	geometry.aspect_ratio = aspect_ratio;
+	return g_environment(RETRO_ENVIRONMENT_SET_GEOMETRY, &geometry);
 }
 
 void present_xrgb8888(const uint32_t *pixels, unsigned width, unsigned height, std::size_t pitch)
