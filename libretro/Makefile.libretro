@@ -1,7 +1,12 @@
 TARGET_NAME := fmtowns
 
-CXX ?= g++
+SRCROOT ?= ..
+OBJDIR ?= .
 TARGET_OS ?=
+LIBROOT ?= $(SRCROOT)/build/mingw-gcc/bin/x32/Release
+GENDRIVLIST ?= $(SRCROOT)/build/generated/mame/fmtowns/drivlist.cpp
+CXX ?= g++
+STRIP ?= strip
 
 ifeq ($(TARGET_OS),)
 ifeq ($(OS),Windows_NT)
@@ -21,25 +26,64 @@ TARGET_EXT := dll
 FPIC :=
 endif
 
-TARGET := $(TARGET_NAME)_libretro.$(TARGET_EXT)
-SOURCES := fmtowns_libretro.cpp osd_libretro.cpp
-OBJECTS := $(SOURCES:.cpp=.o)
+TARGET := $(OBJDIR)/$(TARGET_NAME)_libretro.$(TARGET_EXT)
+OBJECTS := $(OBJDIR)/fmtowns_libretro.o $(OBJDIR)/osd_libretro.o $(OBJDIR)/mame_bridge.o $(OBJDIR)/drivlist.o
+DEPFILES := $(OBJECTS:.o=.d)
 
-CXXFLAGS ?= -O2 -std=gnu++17 -Wall -Wextra
-CXXFLAGS += -I. $(FPIC)
+COMMON_INCLUDES := \
+	-I$(SRCROOT)/libretro \
+	-I$(SRCROOT)/src/osd \
+	-I$(SRCROOT)/src/emu \
+	-I$(SRCROOT)/src/devices \
+	-I$(SRCROOT)/src/mame \
+	-I$(SRCROOT)/src/frontend/mame \
+	-I$(SRCROOT)/src/lib \
+	-I$(SRCROOT)/src/lib/util \
+	-I$(SRCROOT)/3rdparty \
+	-I$(SRCROOT)/3rdparty/asio/include \
+	-I$(SRCROOT)/3rdparty/rapidjson/include \
+	-I$(SRCROOT)/3rdparty/expat/lib \
+	-I$(SRCROOT)/3rdparty/zlib \
+	-I$(SRCROOT)/3rdparty/flac/include \
+	-I$(SRCROOT)/build/generated/emu \
+	-I$(SRCROOT)/build/generated/emu/layout \
+	-I$(SRCROOT)/build/generated/mame/layout
+
+BASE_CXXFLAGS ?= -O3 -DNDEBUG -std=c++20 -Wall -Wextra
+PORTABLE_CPUFLAGS ?= -msse2 -mfpmath=sse
+WRAPPER_CXXFLAGS := $(BASE_CXXFLAGS) $(PORTABLE_CPUFLAGS) $(COMMON_INCLUDES) $(FPIC) -MMD -MP
+
+SHARED_FLAGS += -static -static-libgcc -static-libstdc++
+
+LDFLAGS ?=
 
 all: $(TARGET)
 
 $(TARGET): $(OBJECTS)
 	$(CXX) $(OBJECTS) $(SHARED_FLAGS) -o $@ $(LDFLAGS) $(EXTRA_LIBS)
+	$(STRIP) --strip-unneeded $@ || true
 
-%.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+$(OBJDIR)/fmtowns_libretro.o: $(SRCROOT)/libretro/fmtowns_libretro.cpp | $(OBJDIR)
+	$(CXX) $(WRAPPER_CXXFLAGS) -c $< -o $@
+
+$(OBJDIR)/osd_libretro.o: $(SRCROOT)/libretro/osd_libretro.cpp | $(OBJDIR)
+	$(CXX) $(WRAPPER_CXXFLAGS) -c $< -o $@
+
+$(OBJDIR)/mame_bridge.o: $(SRCROOT)/libretro/mame_bridge.cpp | $(OBJDIR)
+	$(CXX) $(WRAPPER_CXXFLAGS) -c $< -o $@
+
+$(OBJDIR)/drivlist.o: $(GENDRIVLIST) | $(OBJDIR)
+	$(CXX) $(WRAPPER_CXXFLAGS) -I$(SRCROOT)/build/generated/mame/fmtowns -c $< -o $@
+
+$(OBJDIR):
+	@mkdir -p $@
+
+-include $(DEPFILES)
 
 ifeq ($(TARGET_OS),windows)
 clean:
-	-@for %%f in ($(subst /,\,$(OBJECTS)) $(TARGET)) do @if exist "%%f" del /Q "%%f" >NUL 2>&1
+	-@for %%f in ($(subst /,\,$(OBJECTS)) $(subst /,\,$(DEPFILES)) $(subst /,\,$(TARGET))) do @if exist "%%f" del /Q "%%f" >NUL 2>&1
 else
 clean:
-	rm -f $(OBJECTS) $(TARGET)
+	rm -f $(OBJECTS) $(DEPFILES) $(TARGET)
 endif

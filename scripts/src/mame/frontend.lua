@@ -51,6 +51,13 @@ if (_OPTIONS["targetos"] == "windows") then
 	}
 end
 
+if _OPTIONS["libretro-minimal"] == "1" then
+	files {
+		MAME_DIR .. "src/frontend/mame/libretro_stub.cpp",
+	}
+	return
+end
+
 files {
 	MAME_DIR .. "src/frontend/mame/audit.cpp",
 	MAME_DIR .. "src/frontend/mame/audit.h",

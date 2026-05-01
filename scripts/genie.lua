@@ -167,6 +167,11 @@ newoption {
 }
 
 newoption {
+	trigger = "libretro-minimal",
+	description = "Build a reduced frontend set for libretro-only x32 builds.",
+}
+
+newoption {
 	trigger = "gcc_version",
 	description = "GCC compiler version",
 }
