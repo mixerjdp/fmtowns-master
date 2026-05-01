@@ -1588,6 +1588,13 @@ end
 		end
 	end
 
+	if _OPTIONS["targetos"]=="windows" then
+		defines {
+			"BGFX_CONFIG_RENDERER_DIRECT3D11=0",
+			"BGFX_CONFIG_RENDERER_DIRECT3D12=0",
+		}
+	end
+
 	files {
 		MAME_DIR .. "3rdparty/bgfx/src/bgfx.cpp",
 		MAME_DIR .. "3rdparty/bgfx/src/debug_renderdoc.cpp",
