@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -12,6 +13,7 @@ namespace {
 
 constexpr unsigned k_audio_channels = 2;
 constexpr std::size_t k_max_audio_frames = 2048;
+constexpr int16_t k_default_analog_deadzone = 8000;
 
 retro_environment_t g_environment = nullptr;
 retro_video_refresh_t g_video = nullptr;
@@ -20,6 +22,7 @@ retro_audio_sample_batch_t g_audio_batch = nullptr;
 retro_input_poll_t g_input_poll = nullptr;
 retro_input_state_t g_input_state = nullptr;
 retro_log_printf_t g_log = nullptr;
+input_routing_mode g_input_routing_mode = input_routing_mode::hybrid;
 
 std::array<int16_t, k_audio_channels * k_max_audio_frames> g_silence = {};
 double g_audio_remainder = 0.0;
@@ -74,6 +77,11 @@ void set_input_descriptors(const struct retro_input_descriptor *desc)
 		g_environment(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, const_cast<struct retro_input_descriptor *>(desc));
 }
 
+void set_input_routing_mode(input_routing_mode mode)
+{
+	g_input_routing_mode = mode;
+}
+
 void configure_environment(const retro_variable *variables)
 {
 	if (!g_environment)
@@ -103,6 +111,16 @@ bool variable_update_pending()
 	return g_environment(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated;
 }
 
+bool keyboard_input_enabled()
+{
+	return g_input_routing_mode != input_routing_mode::retropad;
+}
+
+bool joypad_input_enabled()
+{
+	return g_input_routing_mode != input_routing_mode::keyboard;
+}
+
 bool joypad_pressed(unsigned port, unsigned id)
 {
 	return g_input_state && g_input_state(port, RETRO_DEVICE_JOYPAD, 0, id);
@@ -111,6 +129,36 @@ bool joypad_pressed(unsigned port, unsigned id)
 int16_t joypad_analog(unsigned port, unsigned index, unsigned id)
 {
 	return g_input_state ? g_input_state(port, RETRO_DEVICE_ANALOG, index, id) : 0;
+}
+
+analog_stick_state normalized_joypad_stick(unsigned port, unsigned index)
+{
+	analog_stick_state stick = {};
+	if (!g_input_state)
+		return stick;
+
+	int x = g_input_state(port, RETRO_DEVICE_ANALOG, index, RETRO_DEVICE_ID_ANALOG_X);
+	int y = g_input_state(port, RETRO_DEVICE_ANALOG, index, RETRO_DEVICE_ID_ANALOG_Y);
+
+	const double radius = std::sqrt(static_cast<double>(x) * static_cast<double>(x) +
+			static_cast<double>(y) * static_cast<double>(y));
+	if (radius <= static_cast<double>(k_default_analog_deadzone))
+		return stick;
+
+	const double angle = std::atan2(static_cast<double>(y), static_cast<double>(x));
+	double scaled_radius = (radius - static_cast<double>(k_default_analog_deadzone)) *
+			(32767.0 / (32767.0 - static_cast<double>(k_default_analog_deadzone)));
+	scaled_radius = std::min(32767.0, scaled_radius);
+
+	x = static_cast<int>(std::lround(scaled_radius * std::cos(angle)));
+	y = static_cast<int>(std::lround(scaled_radius * std::sin(angle)));
+
+	x = std::clamp(x, -32767, 32767);
+	y = std::clamp(y, -32767, 32767);
+
+	stick.x = static_cast<int16_t>(x);
+	stick.y = static_cast<int16_t>(y);
+	return stick;
 }
 
 int16_t mouse_axis(unsigned port, unsigned id)

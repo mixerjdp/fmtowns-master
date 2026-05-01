@@ -323,42 +323,46 @@ constexpr s32 k_axis_max = osd::input_device::ABSOLUTE_MAX;
 
 s32 keyboard_item_state(void *, void *item_internal)
 {
+	if (!fmtowns::libretro_osd::keyboard_input_enabled())
+		return 0;
+
 	const auto *mapping = static_cast<const keyboard_item_mapping *>(item_internal);
 	return mapping && fmtowns::libretro_osd::keyboard_pressed(mapping->key) ? 1 : 0;
 }
 
 s32 pad_item_state(void *device_internal, void *item_internal)
 {
+	if (!fmtowns::libretro_osd::joypad_input_enabled())
+		return 0;
+
 	const auto *device = static_cast<const pad_device_state *>(device_internal);
 	const auto *mapping = static_cast<const pad_item_mapping *>(item_internal);
 	if (!device || !mapping)
 		return 0;
 
-	auto pressed = [port = device->port](unsigned id) { 
+	auto pressed = [port = device->port](unsigned id) {
 		bool result = fmtowns::libretro_osd::joypad_pressed(port, id);
 		return result;
 	};
-	auto analog = [port = device->port](unsigned id) { return fmtowns::libretro_osd::joypad_analog(port, RETRO_DEVICE_INDEX_ANALOG_LEFT, id); };
+	const auto stick = fmtowns::libretro_osd::normalized_joypad_stick(device->port, RETRO_DEVICE_INDEX_ANALOG_LEFT);
 
 	s32 result = 0;
-	constexpr int16_t k_analog_threshold = 16384;
+	constexpr int16_t k_analog_threshold = 11000;
 
 	switch (mapping->kind)
 	{
 	case pad_item_kind::axis_x:
 	{
-		int16_t a = analog(RETRO_DEVICE_ID_ANALOG_X);
-		if (std::abs(a) > 8000)
-			result = a;
+		if (std::abs(stick.x) > 8000)
+			result = stick.x;
 		else if (pressed(RETRO_DEVICE_ID_JOYPAD_LEFT) != pressed(RETRO_DEVICE_ID_JOYPAD_RIGHT))
 			result = pressed(RETRO_DEVICE_ID_JOYPAD_LEFT) ? k_axis_min : k_axis_max;
 		break;
 	}
 	case pad_item_kind::axis_y:
 	{
-		int16_t a = analog(RETRO_DEVICE_ID_ANALOG_Y);
-		if (std::abs(a) > 8000)
-			result = a;
+		if (std::abs(stick.y) > 8000)
+			result = stick.y;
 		else if (pressed(RETRO_DEVICE_ID_JOYPAD_UP) != pressed(RETRO_DEVICE_ID_JOYPAD_DOWN))
 			result = pressed(RETRO_DEVICE_ID_JOYPAD_UP) ? k_axis_min : k_axis_max;
 		break;
@@ -366,45 +370,41 @@ s32 pad_item_state(void *device_internal, void *item_internal)
 	case pad_item_kind::up:
 	{
 		bool dpad = pressed(RETRO_DEVICE_ID_JOYPAD_UP);
-		int16_t analog_y = analog(RETRO_DEVICE_ID_ANALOG_Y);
-		bool analog_up = analog_y < -k_analog_threshold;
+		bool analog_up = stick.y < -k_analog_threshold;
 		result = (dpad || analog_up) ? 1 : 0;
 		
 		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[INPUT] P%d UP: dpad=%d analog_y=%d result=%d\n", 
-			device->port + 1, dpad, analog_y, result);
+			device->port + 1, dpad, stick.y, result);
 		break;
 	}
 	case pad_item_kind::down:
 	{
 		bool dpad = pressed(RETRO_DEVICE_ID_JOYPAD_DOWN);
-		int16_t analog_y = analog(RETRO_DEVICE_ID_ANALOG_Y);
-		bool analog_down = analog_y > k_analog_threshold;
+		bool analog_down = stick.y > k_analog_threshold;
 		result = (dpad || analog_down) ? 1 : 0;
 		
 		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[INPUT] P%d DOWN: dpad=%d analog_y=%d result=%d\n", 
-			device->port + 1, dpad, analog_y, result);
+			device->port + 1, dpad, stick.y, result);
 		break;
 	}
 	case pad_item_kind::left:
 	{
 		bool dpad = pressed(RETRO_DEVICE_ID_JOYPAD_LEFT);
-		int16_t analog_x = analog(RETRO_DEVICE_ID_ANALOG_X);
-		bool analog_left = analog_x < -k_analog_threshold;
+		bool analog_left = stick.x < -k_analog_threshold;
 		result = (dpad || analog_left) ? 1 : 0;
 		
 		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[INPUT] P%d LEFT: dpad=%d analog_x=%d result=%d\n", 
-			device->port + 1, dpad, analog_x, result);
+			device->port + 1, dpad, stick.x, result);
 		break;
 	}
 	case pad_item_kind::right:
 	{
 		bool dpad = pressed(RETRO_DEVICE_ID_JOYPAD_RIGHT);
-		int16_t analog_x = analog(RETRO_DEVICE_ID_ANALOG_X);
-		bool analog_right = analog_x > k_analog_threshold;
+		bool analog_right = stick.x > k_analog_threshold;
 		result = (dpad || analog_right) ? 1 : 0;
 		
 		fmtowns::libretro_osd::log(RETRO_LOG_INFO, "[INPUT] P%d RIGHT: dpad=%d analog_x=%d result=%d\n", 
-			device->port + 1, dpad, analog_x, result);
+			device->port + 1, dpad, stick.x, result);
 		break;
 	}
 	case pad_item_kind::button1: result = pressed(RETRO_DEVICE_ID_JOYPAD_A) ? 1 : 0; break;

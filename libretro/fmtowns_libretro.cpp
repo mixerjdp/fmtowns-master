@@ -29,6 +29,7 @@ constexpr unsigned k_width = 768;
 constexpr unsigned k_height = 512;
 constexpr double k_fps = 60.0;
 constexpr double k_sample_rate = 48000.0;
+constexpr int16_t k_stick_threshold = 11000;
 
 std::string g_system_directory;
 std::string g_bios_directory;
@@ -37,6 +38,7 @@ std::string g_content_path;
 std::string g_ram_size = "default";
 std::string g_pad1_device = "townspad";
 std::string g_pad2_device = "none";
+std::string g_input_mode = "hybrid";
 bool g_mouse_enabled = true;
 bool g_widescreen_enabled = false;
 std::array<uint32_t, k_width * k_height> g_framebuffer = {};
@@ -322,6 +324,7 @@ const retro_variable k_variables[] = {
 	{ "fmtowns_ram", "Memory Size (Restart needed); default|1M|2M|3M|4M|5M|6M|8M|10M|12M|14M|16M|18M|20M|22M|24M|26M|28M|30M|32M|36M|38M|40M|42M|44M|46M|48M|52M|53M|54M|56M|60M|68M|70M|72M|76M|84M|100M" },
 	{ "fmtowns_pad1", "Port 1 Device (Restart needed); townspad|towns6b|martypad|mouse|none" },
 	{ "fmtowns_pad2", "Port 2 Device (Restart needed); none|townspad|towns6b|martypad|mouse" },
+	{ "fmtowns_input_mode", "Input Routing; hybrid|keyboard|retropad" },
 	{ "fmtowns_mouse", "Mouse; enabled|disabled" },
 	{ "fmtowns_widescreen", "Wide Screen; disabled|enabled" },
 	{ nullptr, nullptr }
@@ -818,21 +821,29 @@ void refresh_core_options()
 	const bool is_marty = model == "fmtmarty" || model == "fmtmarty2" || model == "carmarty";
 	const std::string pad1 = fmtowns::libretro_osd::variable_value("fmtowns_pad1", is_marty ? "martypad" : "townspad");
 	const std::string pad2 = fmtowns::libretro_osd::variable_value("fmtowns_pad2", "none");
+	const std::string input_mode = fmtowns::libretro_osd::variable_value("fmtowns_input_mode", "hybrid");
 	const std::string mouse = fmtowns::libretro_osd::variable_value("fmtowns_mouse", "enabled");
 	const std::string widescreen = fmtowns::libretro_osd::variable_value("fmtowns_widescreen", "disabled");
 	const bool mouse_enabled = mouse != "disabled" || pad1 == "mouse" || pad2 == "mouse";
-	if (model == g_model && ram == g_ram_size && pad1 == g_pad1_device && pad2 == g_pad2_device && mouse_enabled == g_mouse_enabled && widescreen == (g_widescreen_enabled ? "enabled" : "disabled"))
+	if (model == g_model && ram == g_ram_size && pad1 == g_pad1_device && pad2 == g_pad2_device && input_mode == g_input_mode && mouse_enabled == g_mouse_enabled && widescreen == (g_widescreen_enabled ? "enabled" : "disabled"))
 		return;
 
 	g_model = model;
 	g_ram_size = ram;
 	g_pad1_device = pad1;
 	g_pad2_device = pad2;
+	g_input_mode = input_mode;
 	g_mouse_enabled = mouse_enabled;
 	g_widescreen_enabled = widescreen == "enabled";
-	fmtowns::libretro_osd::log(RETRO_LOG_INFO, "Input profile: ram=%s, pad1=%s, pad2=%s, mouse=%s, widescreen=%s.\n",
+	fmtowns::libretro_osd::input_routing_mode routing = fmtowns::libretro_osd::input_routing_mode::hybrid;
+	if (input_mode == "keyboard")
+		routing = fmtowns::libretro_osd::input_routing_mode::keyboard;
+	else if (input_mode == "retropad")
+		routing = fmtowns::libretro_osd::input_routing_mode::retropad;
+	fmtowns::libretro_osd::set_input_routing_mode(routing);
+	fmtowns::libretro_osd::log(RETRO_LOG_INFO, "Input profile: ram=%s, pad1=%s, pad2=%s, input_mode=%s, mouse=%s, widescreen=%s.\n",
 			g_ram_size.c_str(),
-			g_pad1_device.c_str(), g_pad2_device.c_str(), mouse.c_str(), widescreen.c_str());
+			g_pad1_device.c_str(), g_pad2_device.c_str(), g_input_mode.c_str(), mouse.c_str(), widescreen.c_str());
 }
 
 bool validate_default_bios()
@@ -933,26 +944,6 @@ RETRO_API_EXPORT void retro_get_system_av_info(retro_system_av_info *info)
 
 RETRO_API_EXPORT void retro_init(void)
 {
-	static const struct retro_input_descriptor desc[] = {
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "D-Pad Left" },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "D-Pad Right" },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "D-Pad Up" },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "D-Pad Down" },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,     "Button A" },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,     "Button B" },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Start (Run)" },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select" },
-		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "D-Pad Left" },
-		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "D-Pad Right" },
-		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "D-Pad Up" },
-		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "D-Pad Down" },
-		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,     "Button A" },
-		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,     "Button B" },
-		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Start (Run)" },
-		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select" },
-		{ 0, 0, 0, 0, nullptr }
-	};
-
 	refresh_environment_paths();
 	set_core_options();
 	// fmtowns::libretro_osd::set_input_descriptors(desc);
@@ -1033,50 +1024,44 @@ RETRO_API_EXPORT void retro_run(void)
 	{
 		g_last_run_frame.store(g_runtime.frame_count());
 		
-		// Leer input del joystick directamente y enviarlo a MAME
-		// Esto es necesario porque MAME no está llamando a pad_item_state para las direcciones
+		const bool joypad_enabled = fmtowns::libretro_osd::joypad_input_enabled();
+
+		// Leer input del joystick directamente y enviarlo a MAME solo cuando el
+		// modo de entrada está dedicado a RetroPad. Cuando el core está en
+		// teclado completo, dejamos esos puertos en cero para evitar doble ruta.
 		for (unsigned player = 0; player < 2; ++player)
 		{
-			const bool up = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_UP);
-			const bool down = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_DOWN);
-			const bool left = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_LEFT);
-			const bool right = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_RIGHT);
-			const bool button1 = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_A);
-			const bool button2 = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_B);
-			const bool start = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_START);
-			const bool select = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_SELECT);
-			
-			// También leer analog stick
-			const int16_t analog_x = fmtowns::libretro_osd::joypad_analog(player, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
-			const int16_t analog_y = fmtowns::libretro_osd::joypad_analog(player, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y);
-			constexpr int16_t threshold = 16384;
-			
-			const bool analog_up = analog_y < -threshold;
-			const bool analog_down = analog_y > threshold;
-			const bool analog_left = analog_x < -threshold;
-			const bool analog_right = analog_x > threshold;
-			
-			// Combinar D-pad y analog stick
-			const bool final_up = up || analog_up;
-			const bool final_down = down || analog_down;
-			const bool final_left = left || analog_left;
-			const bool final_right = right || analog_right;
-			
-			// Log de debug a archivo separado
-			// static bool logged_input[2] = {false, false};
-			// if (!logged_input[player] && (final_up || final_down || final_left || final_right || button1 || button2)) {
-			// 	FILE* f = fopen("D:\\fmtowns_input_debug.txt", "a");
-			// 	if (f) {
-			// 		fprintf(f, "[DEBUG INPUT] P%d: up=%d down=%d left=%d right=%d btn1=%d btn2=%d analog_x=%d analog_y=%d\n",
-			// 			player, final_up, final_down, final_left, final_right, button1, button2, analog_x, analog_y);
-			// 		fclose(f);
-			// 	}
-			// 	logged_input[player] = true;
-			// }
-			
-			// Enviar el input a MAME siempre (no solo cuando hay direcciones)
-			// Esto asegura que los botones también se envíen correctamente
-			g_runtime.set_joystick_input(player, final_up, final_down, final_left, final_right, button1, button2, start, select);
+			if (joypad_enabled)
+			{
+				const bool up = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_UP);
+				const bool down = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_DOWN);
+				const bool left = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_LEFT);
+				const bool right = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_RIGHT);
+				const bool button1 = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_A);
+				const bool button2 = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_B);
+				const bool start = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_START);
+				const bool select = fmtowns::libretro_osd::joypad_pressed(player, RETRO_DEVICE_ID_JOYPAD_SELECT);
+
+				// Normalizar el stick como hace Flycast: deadzone radial + umbral más
+				// bajo para que las diagonales no se pierdan por pequeñas asimetrías del pad.
+				const auto stick = fmtowns::libretro_osd::normalized_joypad_stick(player, RETRO_DEVICE_INDEX_ANALOG_LEFT);
+				const bool analog_up = stick.y < -k_stick_threshold;
+				const bool analog_down = stick.y > k_stick_threshold;
+				const bool analog_left = stick.x < -k_stick_threshold;
+				const bool analog_right = stick.x > k_stick_threshold;
+
+				// Combinar D-pad y analog stick
+				const bool final_up = up || analog_up;
+				const bool final_down = down || analog_down;
+				const bool final_left = left || analog_left;
+				const bool final_right = right || analog_right;
+
+				g_runtime.set_joystick_input(player, final_up, final_down, final_left, final_right, button1, button2, start, select);
+			}
+			else
+			{
+				g_runtime.set_joystick_input(player, false, false, false, false, false, false, false, false);
+			}
 		}
 
 		if (g_mouse_enabled)

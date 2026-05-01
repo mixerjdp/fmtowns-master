@@ -39,7 +39,20 @@ struct retro_input_descriptor
 	const char *description;
 };
 
+struct analog_stick_state
+{
+	int16_t x = 0;
+	int16_t y = 0;
+};
+
 namespace fmtowns::libretro_osd {
+
+enum class input_routing_mode
+{
+	hybrid,
+	keyboard,
+	retropad
+};
 
 void set_environment(retro_environment_t cb);
 void set_video_refresh(retro_video_refresh_t cb);
@@ -48,12 +61,16 @@ void set_audio_sample_batch(retro_audio_sample_batch_t cb);
 void set_input_poll(retro_input_poll_t cb);
 void set_input_state(retro_input_state_t cb);
 void set_input_descriptors(const struct retro_input_descriptor *desc);
+void set_input_routing_mode(input_routing_mode mode);
 
 void configure_environment(const retro_variable *variables);
 void poll_input();
 bool variable_update_pending();
+bool keyboard_input_enabled();
+bool joypad_input_enabled();
 bool joypad_pressed(unsigned port, unsigned id);
 int16_t joypad_analog(unsigned port, unsigned index, unsigned id);
+analog_stick_state normalized_joypad_stick(unsigned port, unsigned index);
 int16_t mouse_axis(unsigned port, unsigned id);
 bool mouse_pressed(unsigned port, unsigned id);
 bool keyboard_pressed(unsigned key);
