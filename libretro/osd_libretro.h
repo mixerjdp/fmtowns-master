@@ -51,6 +51,7 @@ void set_input_descriptors(const struct retro_input_descriptor *desc);
 
 void configure_environment(const retro_variable *variables);
 void poll_input();
+bool variable_update_pending();
 bool joypad_pressed(unsigned port, unsigned id);
 int16_t joypad_analog(unsigned port, unsigned index, unsigned id);
 int16_t mouse_axis(unsigned port, unsigned id);

@@ -94,6 +94,15 @@ void poll_input()
 		g_input_poll();
 }
 
+bool variable_update_pending()
+{
+	if (!g_environment)
+		return false;
+
+	bool updated = false;
+	return g_environment(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated;
+}
+
 bool joypad_pressed(unsigned port, unsigned id)
 {
 	return g_input_state && g_input_state(port, RETRO_DEVICE_JOYPAD, 0, id);

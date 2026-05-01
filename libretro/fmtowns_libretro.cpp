@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "libretro.h"
 #include "fujitsu/fmtowns_capture.h"
 #include "mame_bridge.h"
@@ -37,11 +38,113 @@ std::string g_ram_size = "default";
 std::string g_pad1_device = "townspad";
 std::string g_pad2_device = "none";
 bool g_mouse_enabled = true;
+bool g_widescreen_enabled = false;
 std::array<uint32_t, k_width * k_height> g_framebuffer = {};
+std::array<uint32_t, k_width * k_height> g_presentbuffer = {};
 
 float frame_aspect_ratio(unsigned width, unsigned height)
 {
 	return height ? static_cast<float>(width) / static_cast<float>(height) : 0.0f;
+}
+
+struct crop_rect
+{
+	unsigned x = 0;
+	unsigned y = 0;
+	unsigned width = 0;
+	unsigned height = 0;
+
+	bool valid() const
+	{
+		return width != 0 && height != 0;
+	}
+};
+
+bool is_active_pixel(uint32_t pixel)
+{
+	return (pixel & 0x00ffffffu) != 0;
+}
+
+bool row_has_active_pixel(const uint32_t *pixels, unsigned pitch_pixels, unsigned y, unsigned width)
+{
+	const uint32_t *row = pixels + (static_cast<size_t>(y) * pitch_pixels);
+	for (unsigned x = 0; x < width; ++x)
+	{
+		if (is_active_pixel(row[x]))
+			return true;
+	}
+
+	return false;
+}
+
+bool column_has_active_pixel(const uint32_t *pixels, unsigned pitch_pixels, unsigned x, unsigned top, unsigned bottom)
+{
+	for (unsigned y = top; y <= bottom; ++y)
+	{
+		const uint32_t *row = pixels + (static_cast<size_t>(y) * pitch_pixels);
+		if (is_active_pixel(row[x]))
+			return true;
+	}
+
+	return false;
+}
+
+crop_rect detect_active_rect(const uint32_t *pixels, unsigned width, unsigned height, unsigned pitch_pixels)
+{
+	if (!pixels || !width || !height || !pitch_pixels)
+		return {};
+
+	unsigned top = 0;
+	while (top < height && !row_has_active_pixel(pixels, pitch_pixels, top, width))
+		++top;
+
+	if (top >= height)
+		return {};
+
+	unsigned bottom = height - 1;
+	while (bottom > top && !row_has_active_pixel(pixels, pitch_pixels, bottom, width))
+		--bottom;
+
+	unsigned left = 0;
+	while (left < width && !column_has_active_pixel(pixels, pitch_pixels, left, top, bottom))
+		++left;
+
+	if (left >= width)
+		return {};
+
+	unsigned right = width - 1;
+	while (right > left && !column_has_active_pixel(pixels, pitch_pixels, right, top, bottom))
+		--right;
+
+	constexpr unsigned k_margin = 2;
+	const unsigned x0 = left > k_margin ? left - k_margin : 0;
+	const unsigned y0 = top > k_margin ? top - k_margin : 0;
+	const unsigned x1 = std::min(width - 1, right + k_margin);
+	const unsigned y1 = std::min(height - 1, bottom + k_margin);
+
+	crop_rect rect;
+	rect.x = x0;
+	rect.y = y0;
+	rect.width = x1 - x0 + 1;
+	rect.height = y1 - y0 + 1;
+
+	if (rect.width < 8 || rect.height < 8)
+		return {};
+
+	return rect;
+}
+
+void copy_cropped_frame(const uint32_t *src, unsigned src_pitch_pixels, const crop_rect &rect, uint32_t *dst)
+{
+	if (!src || !dst || !rect.valid() || !src_pitch_pixels)
+		return;
+
+	for (unsigned y = 0; y < rect.height; ++y)
+	{
+		const uint32_t *src_row = src + ((static_cast<size_t>(rect.y + y) * src_pitch_pixels) + rect.x);
+		uint32_t *dst_row = dst + (static_cast<size_t>(y) * rect.width);
+		std::memcpy(dst_row, src_row, static_cast<size_t>(rect.width) * sizeof(uint32_t));
+	}
 }
 
 constexpr const char *k_screen_trace_path = "C:\\sw\\fmtowns-master\\build\\libretro64\\fmtowns_screen_update.log";
@@ -220,6 +323,7 @@ const retro_variable k_variables[] = {
 	{ "fmtowns_pad1", "Port 1 Device (Restart needed); townspad|towns6b|martypad|mouse|none" },
 	{ "fmtowns_pad2", "Port 2 Device (Restart needed); none|townspad|towns6b|martypad|mouse" },
 	{ "fmtowns_mouse", "Mouse; enabled|disabled" },
+	{ "fmtowns_widescreen", "Wide Screen; disabled|enabled" },
 	{ nullptr, nullptr }
 };
 
@@ -580,17 +684,35 @@ private:
 			m_mame->force_video_update();
 		if (m_mame->copy_video_frame(g_framebuffer.data(), k_width, k_height, width, height))
 		{
-			update_geometry(width, height);
-			fmtowns::libretro_osd::present_xrgb8888(g_framebuffer.data(), width, height, k_width * sizeof(uint32_t));
-			const uint32_t first = g_framebuffer[0];
-			const uint32_t center = g_framebuffer[(static_cast<size_t>(height / 2) * k_width) + (width / 2)];
-			const uint32_t last = g_framebuffer[(static_cast<size_t>(height - 1) * k_width) + (width - 1)];
-			unsigned nonzero_samples = 0;
-			for (unsigned y = 0; y < height; y += 32)
+			const uint32_t *present_pixels = g_framebuffer.data();
+			std::size_t present_pitch = static_cast<std::size_t>(k_width) * sizeof(uint32_t);
+			unsigned present_width = width;
+			unsigned present_height = height;
+
+			if (g_widescreen_enabled)
 			{
-				for (unsigned x = 0; x < width; x += 32)
+				const crop_rect crop = detect_active_rect(g_framebuffer.data(), width, height, k_width);
+				if (crop.valid())
 				{
-					if (g_framebuffer[(static_cast<size_t>(y) * k_width) + x] != 0)
+					copy_cropped_frame(g_framebuffer.data(), k_width, crop, g_presentbuffer.data());
+					present_pixels = g_presentbuffer.data();
+					present_pitch = static_cast<std::size_t>(crop.width) * sizeof(uint32_t);
+					present_width = crop.width;
+					present_height = crop.height;
+				}
+			}
+
+			update_geometry(present_width, present_height);
+			fmtowns::libretro_osd::present_xrgb8888(present_pixels, present_width, present_height, present_pitch);
+			const uint32_t first = present_pixels[0];
+			const uint32_t center = present_pixels[(static_cast<size_t>(present_height / 2) * (present_pitch / sizeof(uint32_t))) + (present_width / 2)];
+			const uint32_t last = present_pixels[(static_cast<size_t>(present_height - 1) * (present_pitch / sizeof(uint32_t))) + (present_width - 1)];
+			unsigned nonzero_samples = 0;
+			for (unsigned y = 0; y < present_height; y += 32)
+			{
+				for (unsigned x = 0; x < present_width; x += 32)
+				{
+					if (present_pixels[(static_cast<size_t>(y) * (present_pitch / sizeof(uint32_t))) + x] != 0)
 						++nonzero_samples;
 				}
 			}
@@ -602,8 +724,8 @@ private:
 				fmtowns::libretro_osd::log(RETRO_LOG_INFO,
 						"Frame sample %llu: %ux%u first=%08x center=%08x last=%08x nonzero_samples=%u.\n",
 						static_cast<unsigned long long>(m_frame),
-						width,
-						height,
+						present_width,
+						present_height,
 						first,
 						center,
 						last,
@@ -691,16 +813,26 @@ void set_core_options()
 
 void refresh_core_options()
 {
-	g_model = fmtowns::libretro_osd::variable_value("fmtowns_model", "fmtownsux");
-	g_ram_size = fmtowns::libretro_osd::variable_value("fmtowns_ram", "default");
-	const bool is_marty = g_model == "fmtmarty" || g_model == "fmtmarty2" || g_model == "carmarty";
-	g_pad1_device = fmtowns::libretro_osd::variable_value("fmtowns_pad1", is_marty ? "martypad" : "townspad");
-	g_pad2_device = fmtowns::libretro_osd::variable_value("fmtowns_pad2", "none");
+	const std::string model = fmtowns::libretro_osd::variable_value("fmtowns_model", "fmtownsux");
+	const std::string ram = fmtowns::libretro_osd::variable_value("fmtowns_ram", "default");
+	const bool is_marty = model == "fmtmarty" || model == "fmtmarty2" || model == "carmarty";
+	const std::string pad1 = fmtowns::libretro_osd::variable_value("fmtowns_pad1", is_marty ? "martypad" : "townspad");
+	const std::string pad2 = fmtowns::libretro_osd::variable_value("fmtowns_pad2", "none");
 	const std::string mouse = fmtowns::libretro_osd::variable_value("fmtowns_mouse", "enabled");
-	g_mouse_enabled = mouse != "disabled" || g_pad1_device == "mouse" || g_pad2_device == "mouse";
-	fmtowns::libretro_osd::log(RETRO_LOG_INFO, "Input profile: ram=%s, pad1=%s, pad2=%s, mouse=%s.\n",
+	const std::string widescreen = fmtowns::libretro_osd::variable_value("fmtowns_widescreen", "disabled");
+	const bool mouse_enabled = mouse != "disabled" || pad1 == "mouse" || pad2 == "mouse";
+	if (model == g_model && ram == g_ram_size && pad1 == g_pad1_device && pad2 == g_pad2_device && mouse_enabled == g_mouse_enabled && widescreen == (g_widescreen_enabled ? "enabled" : "disabled"))
+		return;
+
+	g_model = model;
+	g_ram_size = ram;
+	g_pad1_device = pad1;
+	g_pad2_device = pad2;
+	g_mouse_enabled = mouse_enabled;
+	g_widescreen_enabled = widescreen == "enabled";
+	fmtowns::libretro_osd::log(RETRO_LOG_INFO, "Input profile: ram=%s, pad1=%s, pad2=%s, mouse=%s, widescreen=%s.\n",
 			g_ram_size.c_str(),
-			g_pad1_device.c_str(), g_pad2_device.c_str(), mouse.c_str());
+			g_pad1_device.c_str(), g_pad2_device.c_str(), mouse.c_str(), widescreen.c_str());
 }
 
 bool validate_default_bios()
@@ -875,6 +1007,8 @@ RETRO_API_EXPORT void retro_run(void)
 	g_run_stage.store(static_cast<unsigned>(run_stage::retro_run));
 
 	fmtowns::libretro_osd::poll_input();
+	if (fmtowns::libretro_osd::variable_update_pending())
+		refresh_core_options();
 	const bool runtime_loaded = g_runtime_loaded.load();
 
 	// Log de debug a archivo separado (RetroArch suprime logs durante gameplay)
