@@ -71,7 +71,7 @@ public:
 
 	virtual bool image_is_chd_type() const noexcept override { return true; }
 	virtual const char *image_interface() const noexcept override { return m_interface; }
-	virtual const char *file_extensions() const noexcept override { return "chd,hd,hdv,2mg,hdi"; }
+	virtual const char *file_extensions() const noexcept override { return "chd,hd,hdv,2mg,hdi,h0"; }
 	virtual const util::option_guide &create_option_guide() const override;
 
 	const hard_disk_file::info &get_info() const;

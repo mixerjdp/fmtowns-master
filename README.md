@@ -98,14 +98,14 @@ Exact filenames can vary depending on the BIOS set you use. The important part i
 The core currently advertises the following extensions in its RetroArch metadata:
 
 ```text
-chd|cue|toc|nrg|gdi|iso|cdr|mfi|dfi|mfm|td0|imd|86f|d77|d88|1dd|cqm|cqi|dsk|bin|hdm|hd|hdv|2mg|hdi|m3u
+chd|cue|toc|nrg|gdi|iso|cdr|mfi|dfi|mfm|td0|imd|86f|d77|d88|1dd|cqm|cqi|dsk|bin|hdm|hd|hdv|2mg|hdi|h0|m3u
 ```
 
 Notes:
 
 - CD media formats include `chd`, `cue`, `toc`, `nrg`, `gdi`, `iso`, `cdr`, and `bin`.
 - Disk and floppy formats include `mfi`, `dfi`, `mfm`, `td0`, `imd`, `86f`, `d77`, `d88`, `1dd`, `cqm`, `cqi`, and `dsk`.
-- Hard-disk style images include `hdm`, `hd`, `hdv`, `2mg`, and `hdi`.
+- Hard-disk style images include `hdm`, `hd`, `hdv`, `2mg`, `hdi`, and `h0`.
 - `m3u` can be used for multi-disc workflows when your RetroArch setup supports it.
 
 ## How to run

@@ -20,9 +20,11 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <utility>
+#include <system_error>
 #include <vector>
 
 #include "inputdev.h"
@@ -660,7 +662,7 @@ media_kind kind_for_extension(const std::string &extension)
 		return media_kind::floppy;
 
 	if (extension == "hd" || extension == "hdv" || extension == "2mg" ||
-			extension == "hdi")
+			extension == "hdi" || extension == "h0")
 		return media_kind::harddisk;
 
 	return media_kind::unknown;
@@ -686,6 +688,92 @@ std::string parent_path(const std::string &path)
 {
 	const std::string::size_type slash = path.find_last_of("/\\");
 	return slash == std::string::npos ? std::string() : path.substr(0, slash);
+}
+
+std::string file_name(const std::string &path)
+{
+	const std::string::size_type slash = path.find_last_of("/\\");
+	return slash == std::string::npos ? path : path.substr(slash + 1);
+}
+
+std::string file_stem(const std::string &path)
+{
+	const std::string name = file_name(path);
+	const std::string::size_type dot = name.find_last_of('.');
+	return dot == std::string::npos ? name : name.substr(0, dot);
+}
+
+bool path_exists(const std::filesystem::path &path)
+{
+	std::error_code ec;
+	return std::filesystem::exists(path, ec);
+}
+
+bool copy_file_if_missing(const std::filesystem::path &source, const std::filesystem::path &target, std::string &error)
+{
+	if (path_exists(target))
+		return true;
+
+	std::ifstream in(source, std::ios::binary);
+	if (!in)
+	{
+		error = "Unable to open CMOS seed: " + source.string();
+		return false;
+	}
+
+	std::error_code ec;
+	std::filesystem::create_directories(target.parent_path(), ec);
+	if (ec)
+	{
+		error = "Unable to create NVRAM directory: " + target.parent_path().string();
+		return false;
+	}
+
+	std::ofstream out(target, std::ios::binary | std::ios::trunc);
+	if (!out)
+	{
+		error = "Unable to create NVRAM seed: " + target.string();
+		return false;
+	}
+
+	out << in.rdbuf();
+	out.flush();
+	if (!out.good())
+	{
+		error = "Failed to copy CMOS seed to NVRAM: " + target.string();
+		return false;
+	}
+
+	return true;
+}
+
+std::string preferred_nvram_directory(const std::string &content_path, const std::string &default_nvram_directory, bool &seed_cmos, std::string &seed_path)
+{
+	seed_cmos = false;
+	seed_path.clear();
+
+	if (content_path.empty())
+		return default_nvram_directory;
+
+	const std::string content_stem = file_stem(content_path);
+	if (content_stem.empty())
+		return default_nvram_directory;
+
+	const std::filesystem::path content_dir(parent_path(content_path));
+	const std::filesystem::path cmos_path = content_dir / "cmos.dat";
+	const std::filesystem::path content_nvram_base = std::filesystem::path(default_nvram_directory) / content_stem;
+
+	if (path_exists(cmos_path))
+	{
+		seed_cmos = true;
+		seed_path = cmos_path.string();
+		return content_nvram_base.string();
+	}
+
+	if (path_exists(content_nvram_base))
+		return content_nvram_base.string();
+
+	return default_nvram_directory;
 }
 
 std::string trim(std::string value)
@@ -850,9 +938,28 @@ public:
 		m_options->set_value(OPTION_NVRAM_SAVE, true, OPTION_PRIORITY_CMDLINE);
 		set_option(*m_options, OPTION_MEDIAPATH, config.bios_directory);
 		set_option(*m_options, OPTION_CFG_DIRECTORY, config.cfg_directory);
-		set_option(*m_options, OPTION_NVRAM_DIRECTORY, config.nvram_directory);
-		set_option(*m_options, OPTION_STATE_DIRECTORY, join_path(config.nvram_directory, "state"));
-		set_option(*m_options, OPTION_SNAPSHOT_DIRECTORY, join_path(config.nvram_directory, "snap"));
+		bool seed_cmos = false;
+		std::string seed_path;
+		const std::string nvram_directory = preferred_nvram_directory(config.content_path, config.nvram_directory, seed_cmos, seed_path);
+		if (seed_cmos)
+		{
+			const std::filesystem::path nvram_seed_path = std::filesystem::path(nvram_directory) / config.model / "nvram16";
+			std::string seed_error;
+			if (!copy_file_if_missing(std::filesystem::path(seed_path), nvram_seed_path, seed_error))
+			{
+				error = std::move(seed_error);
+				return false;
+			}
+
+			fmtowns::libretro_osd::log(RETRO_LOG_INFO,
+					"[MAME_BRIDGE] CMOS seed %s will initialize %s\n",
+					seed_path.c_str(),
+					nvram_seed_path.string().c_str());
+		}
+
+		set_option(*m_options, OPTION_NVRAM_DIRECTORY, nvram_directory);
+		set_option(*m_options, OPTION_STATE_DIRECTORY, join_path(nvram_directory, "state"));
+		set_option(*m_options, OPTION_SNAPSHOT_DIRECTORY, join_path(nvram_directory, "snap"));
 		if (!config.ram_size.empty() && config.ram_size != "default")
 		{
 			set_option(*m_options, OPTION_RAMSIZE, config.ram_size);

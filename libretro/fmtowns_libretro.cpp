@@ -922,7 +922,7 @@ RETRO_API_EXPORT void retro_get_system_info(retro_system_info *info)
 	std::memset(info, 0, sizeof(*info));
 	info->library_name = "FM Towns (MAME)";
 	info->library_version = "0.287";
-	info->valid_extensions = "chd|cue|toc|nrg|gdi|iso|cdr|mfi|dfi|mfm|td0|imd|86f|d77|d88|1dd|cqm|cqi|dsk|bin|hdm|hd|hdv|2mg|hdi|m3u";
+	info->valid_extensions = "chd|cue|toc|nrg|gdi|iso|cdr|mfi|dfi|mfm|td0|imd|86f|d77|d88|1dd|cqm|cqi|dsk|bin|hdm|hd|hdv|2mg|hdi|h0|m3u";
 	info->need_fullpath = true;
 	info->block_extract = true;
 }

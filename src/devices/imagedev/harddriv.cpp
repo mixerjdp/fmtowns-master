@@ -89,7 +89,7 @@ harddisk_image_device::~harddisk_image_device()
 
 void harddisk_image_device::device_config_complete()
 {
-	add_format("chd", "CHD Hard drive", "chd,hd,hdv,2mg,hdi", hd_option_spec);
+	add_format("chd", "CHD Hard drive", "chd,hd,hdv,2mg,hdi,h0", hd_option_spec);
 }
 
 const util::option_guide &harddisk_image_device::create_option_guide() const
@@ -383,4 +383,3 @@ std::error_condition harddisk_image_device::get_disk_key_data(std::vector<uint8_
 {
 	return m_hard_disk_handle->get_disk_key_data(data);
 }
-
