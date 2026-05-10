@@ -789,7 +789,12 @@ std::string join_path(const std::string &base, const char *leaf)
 
 	const char last = base[base.size() - 1];
 	const bool has_separator = last == '/' || last == '\\';
-	return base + (has_separator ? "" : "\\") + (leaf ? leaf : "");
+#ifdef _WIN32
+	const char separator = '\\';
+#else
+	const char separator = '/';
+#endif
+	return base + (has_separator ? "" : std::string(1, separator)) + (leaf ? leaf : "");
 }
 
 void refresh_environment_paths()
