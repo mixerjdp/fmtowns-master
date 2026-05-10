@@ -53,7 +53,10 @@ BASE_CXXFLAGS ?= -O3 -DNDEBUG -std=c++20 -Wall -Wextra
 PORTABLE_CPUFLAGS ?= -msse2 -mfpmath=sse
 WRAPPER_CXXFLAGS := $(BASE_CXXFLAGS) $(PORTABLE_CPUFLAGS) $(COMMON_INCLUDES) $(FPIC) -MMD -MP
 
-SHARED_FLAGS += -static -static-libgcc -static-libstdc++
+ifeq ($(TARGET_OS),windows)
+SHARED_FLAGS += -static
+endif
+SHARED_FLAGS += -static-libgcc -static-libstdc++
 
 LDFLAGS ?=
 

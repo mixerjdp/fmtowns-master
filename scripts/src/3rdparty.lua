@@ -1588,7 +1588,7 @@ end
 		end
 	end
 
-	if _OPTIONS["targetos"]=="windows" then
+	if _OPTIONS["targetos"]=="windows" or _OPTIONS["targetos"]=="linux" then
 		defines {
 			"BGFX_CONFIG_RENDERER_DIRECT3D11=0",
 			"BGFX_CONFIG_RENDERER_DIRECT3D12=0",

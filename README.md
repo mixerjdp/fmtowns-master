@@ -117,6 +117,8 @@ Notes:
 
 ## Local build
 
+### Windows
+
 Build scripts are provided for both architectures:
 
 ```bat
@@ -125,6 +127,18 @@ build32.bat
 ```
 
 The scripts build the core, install the DLL and `.info` file into your configured RetroArch directories, and keep the wrapper build incremental so repeated builds are faster.
+
+### Linux
+
+A build script is provided for Linux:
+
+```sh
+./build_linux.sh
+```
+
+This script locates the MAME static libraries previously built in `build/`, then compiles the libretro shared object using `libretro/Makefile.libretro`. The resulting `fmtowns_libretro.so` is placed in `build/libretro/linux64/`.
+
+Requirements: `g++`, `make`, `pkg-config`, SDL2 and X11 development libraries.
 
 ## Release v1.00
 

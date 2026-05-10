@@ -1,10 +1,9 @@
 // license:BSD-3-Clause
 // copyright-holders:Vas Crabb
-#include <initguid.h>
-
 #include "mmdevice_helpers.h"
 
 #if defined(_WIN32)
+#include <initguid.h>
 
 #include "osdcore.h"
 #include "strconv.h"
